@@ -1,0 +1,16 @@
+# 忽略编译好的 Go 二进制程序
+DIY-Ruleset.exe
+DIY-Ruleset
+
+# 忽略临时文件夹和发布文件夹
+publish/
+process/
+
+# 忽略内核文件
+sing-box
+mihomo
+sing-box.exe
+mihomo.exe
+
+# 忽略环境配置
+.env
