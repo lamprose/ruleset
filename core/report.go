@@ -127,10 +127,8 @@ func renderTableSection(sb *strings.Builder, title string, enableProxy bool, row
 func GenerateReport(results map[string]*ProcessedResult, cfg *Config) {
 	ghProxy := cfg.Global.GhProxy
 	enableProxy := cfg.Global.EnableGhProxy
-
 	const startTag = `<!-- REPORT_START -->`
 	const endTag = `<!-- REPORT_END -->`
-
 	var sb strings.Builder
 
 	total := 0
@@ -188,7 +186,6 @@ func GenerateReport(results map[string]*ProcessedResult, cfg *Config) {
 
 		if cat.PublishWhite {
 			whiteName := cat.Name + "_white"
-			if cat.WhiteName != "" { whiteName = cat.WhiteName }
 			displayNameWhite := strings.ReplaceAll(whiteName, "-", "&#8209;")
 
 			if r.WhiteCount > 0 {
@@ -222,14 +219,13 @@ func GenerateReport(results map[string]*ProcessedResult, cfg *Config) {
 
 		renderCoreRow := func(suffix string, rowType string) {
 			targetName := catName + suffix
-			if rowType == "white" && cat.WhiteName != "" {
-				targetName = cat.WhiteName
+			if rowType == "white" {
+				targetName = catName + "_white"
 			}
 			displayName := strings.ReplaceAll(targetName, "-", "&#8209;")
-
 			sbJson := fmt.Sprintf("publish/singbox/%s.json", targetName)
 			sbSrs := fmt.Sprintf("publish/singbox/%s.srs", targetName)
-			miList := fmt.Sprintf("publish/mihomo/%s.list", targetName)
+			miTxt := fmt.Sprintf("publish/mihomo/%s.txt", targetName)
 			miYaml := fmt.Sprintf("publish/mihomo/%s.yaml", targetName)
 			miMrs := fmt.Sprintf("publish/mihomo/%s.mrs", targetName)
 			
@@ -239,7 +235,7 @@ func GenerateReport(results map[string]*ProcessedResult, cfg *Config) {
 			}
 
 			hasSb := anyFileExists(sbJson, sbSrs)
-			hasMi := anyFileExists(miList, miYaml, miMrs) || (miMrsIp != "" && anyFileExists(miMrsIp))
+			hasMi := anyFileExists(miTxt, miYaml, miMrs) || (miMrsIp != "" && anyFileExists(miMrsIp))
 
 			if !hasSb && !hasMi { return }
 
@@ -270,7 +266,7 @@ func GenerateReport(results map[string]*ProcessedResult, cfg *Config) {
 			}
 
 			if hasMi {
-				urlList := fmt.Sprintf("https://github.com/%s/raw/publish/mihomo/%s.list", os.Getenv("GITHUB_REPOSITORY"), targetName)
+				urlTxt := fmt.Sprintf("https://github.com/%s/raw/publish/mihomo/%s.txt", os.Getenv("GITHUB_REPOSITORY"), targetName)
 				urlYaml := fmt.Sprintf("https://github.com/%s/raw/publish/mihomo/%s.yaml", os.Getenv("GITHUB_REPOSITORY"), targetName)
 				urlMrs := fmt.Sprintf("https://github.com/%s/raw/publish/mihomo/%s.mrs", os.Getenv("GITHUB_REPOSITORY"), targetName)
 				
@@ -280,7 +276,7 @@ func GenerateReport(results map[string]*ProcessedResult, cfg *Config) {
 				}
 				
 				links = append(links, 
-					LinkDef{"mihomo&#8288;-&#8288;list", urlList, getFileSize(miList), catOut.Mihomo.List && anyFileExists(miList), "&nbsp;&nbsp;&nbsp;"},
+					LinkDef{"mihomo&#8288;-&#8288;txt", urlTxt, getFileSize(miTxt), catOut.Mihomo.TXT && anyFileExists(miTxt), "&nbsp;&nbsp;&nbsp;&nbsp;"},
 					LinkDef{"mihomo&#8288;-&#8288;yaml", urlYaml, getFileSize(miYaml), catOut.Mihomo.YAML && anyFileExists(miYaml), "&nbsp;"},
 					LinkDef{mrsLabel, urlMrs, getFileSize(miMrs), catOut.Mihomo.MRS && anyFileExists(miMrs), "&nbsp;&nbsp;"},
 				)
@@ -318,10 +314,12 @@ func GenerateReport(results map[string]*ProcessedResult, cfg *Config) {
 		}
 		catName := cat.Name
 
-		renderAppleRow := func(suffix string) {
+		renderAppleRow := func(suffix string, rowType string) {
 			targetName := catName + suffix
+			if rowType == "white" {
+				targetName = catName + "_white"
+			}
 			displayName := strings.ReplaceAll(targetName, "-", "&#8209;")
-
 			surgeFile := fmt.Sprintf("publish/surge/%s.list", targetName)
 			srFile := fmt.Sprintf("publish/shadowrocket/%s.list", targetName)
 			qxFile := fmt.Sprintf("publish/quantumultx/%s.list", targetName)
@@ -331,7 +329,14 @@ func GenerateReport(results map[string]*ProcessedResult, cfg *Config) {
 
 			if anyFileExists(surgeFile, srFile, qxFile, loonFile, stashFile, egernFile) {
 				var linesCount int
-				if suffix == "_ip" {
+				if rowType == "white" { 
+					if anyFileExists(surgeFile) { linesCount = r.ExactCounts["surge_total_white"] } else 
+					if anyFileExists(srFile) { linesCount = r.ExactCounts["shadowrocket_total_white"] } else 
+					if anyFileExists(qxFile) { linesCount = r.ExactCounts["quantumultx_total_white"] } else 
+					if anyFileExists(loonFile) { linesCount = r.ExactCounts["loon_total_white"] } else 
+					if anyFileExists(stashFile) { linesCount = r.ExactCounts["stash_total_white"] } else 
+					if anyFileExists(egernFile) { linesCount = r.ExactCounts["egern_total_white"] }
+				} else if suffix == "_ip" {
 					if anyFileExists(surgeFile) { linesCount = r.ExactCounts["surge_ip"] } else 
 					if anyFileExists(srFile) { linesCount = r.ExactCounts["shadowrocket_ip"] } else 
 					if anyFileExists(qxFile) { linesCount = r.ExactCounts["quantumultx_ip"] } else 
@@ -365,8 +370,11 @@ func GenerateReport(results map[string]*ProcessedResult, cfg *Config) {
 				appleRows = append(appleRows, ReportRow{displayName, linesCount, cellDirect, cellProxy})
 			}
 		}
-		renderAppleRow("")
-		renderAppleRow("_ip")
+		renderAppleRow("", "main")
+		renderAppleRow("_ip", "ip")
+		if cat.PublishWhite {
+			renderAppleRow("_white", "white")
+		}
 	}
 	renderTableSection(&sb, "Loon / Surge / Quantumultx / Shadowrocket / Egern / Stash", enableProxy, appleRows)
 
@@ -379,29 +387,44 @@ func GenerateReport(results map[string]*ProcessedResult, cfg *Config) {
 		if !catOut.V2ray.Enable { continue }
 		
 		catName := cat.Name
-		displayName := strings.ReplaceAll(catName, "-", "&#8209;")
 
-		v2CombinedFile := fmt.Sprintf("publish/v2ray/%s.txt", catName)
-		v2IpFile := fmt.Sprintf("publish/v2ray/%s_ip.txt", catName)
+		renderV2rayRow := func(suffix, rowType string) {
+			targetName := catName + suffix
+			if rowType == "white" {
+				targetName = catName + "_white"
+			}
+			displayName := strings.ReplaceAll(targetName, "-", "&#8209;")
+			v2File := fmt.Sprintf("publish/v2ray/%s.txt", targetName)
+			if anyFileExists(v2File) {
+				var linesCount int
+				if rowType == "white" {
+					if catOut.V2ray.SingleFile { linesCount = r.ExactCounts["v2ray_total_white"] } else { linesCount = r.ExactCounts["v2ray_dom_white"] }
+				} else if rowType == "ip" { 
+					linesCount = r.ExactCounts["v2ray_ip"] 
+				} else if catOut.V2ray.SingleFile { 
+					linesCount = r.ExactCounts["v2ray_total"] 
+				} else {
+					linesCount = r.ExactCounts["v2ray_dom"]
+				}
 
-		if catOut.V2ray.SingleFile && anyFileExists(v2CombinedFile) {
-			linesCount := r.ExactCounts["v2ray_total"]
-			urlV2 := fmt.Sprintf("https://github.com/%s/raw/publish/v2ray/%s.txt", os.Getenv("GITHUB_REPOSITORY"), catName)
-			cellDirect, cellProxy := buildLinksCell(ghProxy, enableProxy, LinkDef{"v2ray", urlV2, getFileSize(v2CombinedFile), true, "&nbsp;"})
-			v2rayRows = append(v2rayRows, ReportRow{displayName, linesCount, cellDirect, cellProxy})
-		} else {
-			if anyFileExists(v2CombinedFile) {
-				linesCount := r.ExactCounts["v2ray_dom"]
-				urlV2 := fmt.Sprintf("https://github.com/%s/raw/publish/v2ray/%s.txt", os.Getenv("GITHUB_REPOSITORY"), catName)
-				cellDirect, cellProxy := buildLinksCell(ghProxy, enableProxy, LinkDef{"v2ray&#8288;-&#8288;domain", urlV2, getFileSize(v2CombinedFile), true, "&nbsp;"})
+				label := "v2ray"
+				if rowType == "main" && !catOut.V2ray.SingleFile { label = "v2ray&#8288;-&#8288;domain" }
+				if rowType == "ip" { label = "v2ray&#8288;-&#8288;ipcidr" }
+				if rowType == "white" { label = "v2ray&#8288;-&#8288;white" }
+
+				urlV2 := fmt.Sprintf("https://github.com/%s/raw/publish/v2ray/%s.txt", os.Getenv("GITHUB_REPOSITORY"), targetName)
+				cellDirect, cellProxy := buildLinksCell(ghProxy, enableProxy, LinkDef{label, urlV2, getFileSize(v2File), true, "&nbsp;"})
 				v2rayRows = append(v2rayRows, ReportRow{displayName, linesCount, cellDirect, cellProxy})
 			}
-			if anyFileExists(v2IpFile) {
-				linesCount := r.ExactCounts["v2ray_ip"]
-				urlIp := fmt.Sprintf("https://github.com/%s/raw/publish/v2ray/%s_ip.txt", os.Getenv("GITHUB_REPOSITORY"), catName)
-				cellDirect, cellProxy := buildLinksCell(ghProxy, enableProxy, LinkDef{"v2ray&#8288;-&#8288;ipcidr", urlIp, getFileSize(v2IpFile), true, "&nbsp;&nbsp;&nbsp;&nbsp;"})
-				v2rayRows = append(v2rayRows, ReportRow{displayName + "_ip", linesCount, cellDirect, cellProxy})
-			}
+		}
+		if catOut.V2ray.SingleFile {
+			renderV2rayRow("", "main")
+		} else {
+			renderV2rayRow("", "main")
+			renderV2rayRow("_ip", "ip")
+		}
+		if cat.PublishWhite {
+			renderV2rayRow("_white", "white")
 		}
 	}
 	renderTableSection(&sb, "V2Ray (TXT)", enableProxy, v2rayRows)
@@ -414,28 +437,35 @@ func GenerateReport(results map[string]*ProcessedResult, cfg *Config) {
 		}
 
 		catName := cat.Name
-		displayName := strings.ReplaceAll(catName, "-", "&#8209;")
-		
-		adgFile := fmt.Sprintf("publish/adblock/%s.txt", catName)
-		dnsmasqFile := fmt.Sprintf("publish/dnsmasq/%s.conf", catName)
-		smartdnsFile := fmt.Sprintf("publish/smartdns/%s.conf", catName)
 
-		if anyFileExists(adgFile, dnsmasqFile, smartdnsFile) {
-			var linesCount int
-			if anyFileExists(adgFile) { linesCount = getLineCount(adgFile) } else 
-			if anyFileExists(dnsmasqFile) { linesCount = getLineCount(dnsmasqFile) } else 
-			if anyFileExists(smartdnsFile) { linesCount = getLineCount(smartdnsFile) }
+		renderDnsRow := func(suffix, rowType string) {
+			targetName := catName + suffix
+			if rowType == "white" { targetName = catName + "_white" }
+			displayName := strings.ReplaceAll(targetName, "-", "&#8209;")
+			adgFile := fmt.Sprintf("publish/adblock/%s.txt", targetName)
+			dnsmasqFile := fmt.Sprintf("publish/dnsmasq/%s.conf", targetName)
+			smartdnsFile := fmt.Sprintf("publish/smartdns/%s.conf", targetName)
+			if anyFileExists(adgFile, dnsmasqFile, smartdnsFile) {
+				var linesCount int
+				if anyFileExists(adgFile) { linesCount = getLineCount(adgFile) } else 
+				if anyFileExists(dnsmasqFile) { linesCount = getLineCount(dnsmasqFile) } else 
+				if anyFileExists(smartdnsFile) { linesCount = getLineCount(smartdnsFile) }
 
-			urlAdg := fmt.Sprintf("https://github.com/%s/raw/publish/adblock/%s.txt", os.Getenv("GITHUB_REPOSITORY"), catName)
-			urlDnsmasq := fmt.Sprintf("https://github.com/%s/raw/publish/dnsmasq/%s.conf", os.Getenv("GITHUB_REPOSITORY"), catName)
-			urlSmartdns := fmt.Sprintf("https://github.com/%s/raw/publish/smartdns/%s.conf", os.Getenv("GITHUB_REPOSITORY"), catName)
+				urlAdg := fmt.Sprintf("https://github.com/%s/raw/publish/adblock/%s.txt", os.Getenv("GITHUB_REPOSITORY"), targetName)
+				urlDnsmasq := fmt.Sprintf("https://github.com/%s/raw/publish/dnsmasq/%s.conf", os.Getenv("GITHUB_REPOSITORY"), targetName)
+				urlSmartdns := fmt.Sprintf("https://github.com/%s/raw/publish/smartdns/%s.conf", os.Getenv("GITHUB_REPOSITORY"), targetName)
 
-			cellDirect, cellProxy := buildLinksCell(ghProxy, enableProxy,
-				LinkDef{"adblock", urlAdg, getFileSize(adgFile), cat.PublishAdblock && anyFileExists(adgFile), "&nbsp;&nbsp;&nbsp;"},
-				LinkDef{"dnsmasq", urlDnsmasq, getFileSize(dnsmasqFile), cat.PublishDnsmasq && anyFileExists(dnsmasqFile), "&nbsp;"},
-				LinkDef{"smartdns", urlSmartdns, getFileSize(smartdnsFile), cat.PublishSmartDNS && anyFileExists(smartdnsFile), "&nbsp;"},
-			)
-			dnsRows = append(dnsRows, ReportRow{displayName, linesCount, cellDirect, cellProxy})
+				cellDirect, cellProxy := buildLinksCell(ghProxy, enableProxy,
+					LinkDef{"adblock", urlAdg, getFileSize(adgFile), cat.PublishAdblock && anyFileExists(adgFile), "&nbsp;&nbsp;&nbsp;"},
+					LinkDef{"dnsmasq", urlDnsmasq, getFileSize(dnsmasqFile), cat.PublishDnsmasq && anyFileExists(dnsmasqFile), "&nbsp;"},
+					LinkDef{"smartdns", urlSmartdns, getFileSize(smartdnsFile), cat.PublishSmartDNS && anyFileExists(smartdnsFile), "&nbsp;"},
+				)
+				dnsRows = append(dnsRows, ReportRow{displayName, linesCount, cellDirect, cellProxy})
+			}
+		}
+		renderDnsRow("", "main")
+		if cat.PublishWhite {
+			renderDnsRow("_white", "white")
 		}
 	}
 	renderTableSection(&sb, "其它服务端 (DNS & Adblock)", enableProxy, dnsRows)
@@ -466,5 +496,7 @@ func GenerateReport(results map[string]*ProcessedResult, cfg *Config) {
 
 	sb.WriteString("\n" + endTag + "\n")
 	reportTitle := "# 📦 DIY-Ruleset 自动编译报告\n\n**该页面由 GitHub Actions 每日自动生成**\n\n"
+	
+	os.MkdirAll("publish", 0755) 
 	_ = os.WriteFile("publish/README.md", []byte(reportTitle+sb.String()), 0644)
 }

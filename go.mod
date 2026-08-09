@@ -1,4 +1,4 @@
-module DIY-Ruleset
+module diy-ruleset
 
 go 1.22.0
 

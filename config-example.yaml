@@ -13,8 +13,8 @@ global:
     single_file: false       # true将域名和IP合并为一个文件; false拆分为 主文件名.srs 和 主文件名ip.srs
   mihomo:
     enable: true             # 是否生成 Mihomo (Clash Meta) 文件，总开关
-    list: true               # 是否生成 Classical List 格式文件
-    yaml: false              # 是否生成 YAML 格式文件
+    txt: true                # 是否生成 Classical List 格式文件
+    yaml: true               # 是否生成 YAML 格式文件
     mrs: true                # 是否生成 MRS  格式文件
     single_file: false       # true合并域名和IP; false拆分为 主文件名.mrs 和 主文件名ip.mrs，注：mrs 文件不支持合并，开启也会拆分！
   v2ray:        {enable: true, single_file: false}
@@ -51,7 +51,6 @@ categories:
     # 白名单控制
     auto_extract_white: true   # 自动从上游 (如 adblock 格式) 提取 @@ 白名单
     publish_white: true        # 将提取的白名单单独输出一份文件
-    white_name: "reject_white" # 自定义白名单文件名
     white_behavior: "remove"   # 可用值："remove" = 从主规则剔除并提取; 可用值："extract_only" = 仅提取，不进行剔除
     # DNS 拦截模式
     publish_adblock: true      # 输出 Adblock 兼容格式

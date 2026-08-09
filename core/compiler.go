@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 func CompileAll(cfg *Config) {
@@ -27,41 +28,66 @@ func CompileAll(cfg *Config) {
 		fmt.Println("mihomo not detected or MRS disabled, skipping .mrs compilation.")
 	}
 
+	var wg sync.WaitGroup
+
 	if hasSingbox {
 		files, _ := filepath.Glob("process" + "/srs_*.json")
 		
 		for _, file := range files {
-			baseName := strings.TrimPrefix(filepath.Base(file), "srs_")
-			outName := strings.TrimSuffix(baseName, ".json") + ".srs"
-			outPath := filepath.Join("publish/singbox", outName)
+			wg.Add(1)
+			
+			go func(f string) {
+				defer wg.Done()
+				
+				baseName := strings.TrimPrefix(filepath.Base(f), "srs_")
+				outName := strings.TrimSuffix(baseName, ".json") + ".srs"
+				outPath := filepath.Join("publish/singbox", outName)
 
-			if err := exec.Command("sing-box", "rule-set", "compile", file, "-o", outPath).Run(); err != nil {
-				fmt.Printf("Failed to compile (sing-box): %s\n", file)
-			} else {
-				fmt.Printf("Successfully compiled: %s\n", outPath)
-			}
+				if err := exec.Command("sing-box", "rule-set", "compile", f, "-o", outPath).Run(); err != nil {
+					fmt.Printf("Failed to compile (sing-box): %s\n", f)
+				} else {
+					fmt.Printf("Successfully compiled: %s\n", outPath)
+				}
+			}(file)
 		}
 	}
 
 	if hasMihomo {
-		domFiles, _ := filepath.Glob("process" + "/*_mihomo_domain.list")
+		domFiles, _ := filepath.Glob("process" + "/*_mihomo_domain.txt")
 		for _, file := range domFiles {
-			catName := strings.TrimSuffix(filepath.Base(file), "_mihomo_domain.list")
-			outFile := fmt.Sprintf("%s/%s.mrs", "publish/mihomo", catName)
-			if err := exec.Command("mihomo", "convert-ruleset", "domain", "text", file, outFile).Run(); err == nil {
-				fmt.Printf("Successfully compiled: %s\n", outFile)
-			}
+			wg.Add(1)
+			
+			go func(f string) {
+				defer wg.Done()
+				
+				catName := strings.TrimSuffix(filepath.Base(f), "_mihomo_domain.txt")
+				outFile := fmt.Sprintf("%s/%s.mrs", "publish/mihomo", catName)
+				if err := exec.Command("mihomo", "convert-ruleset", "domain", "text", f, outFile).Run(); err == nil {
+					fmt.Printf("Successfully compiled: %s\n", outFile)
+				} else {
+					fmt.Printf("Failed to compile (mihomo domain): %s\n", f)
+				}
+			}(file)
 		}
 
-		ipFiles, _ := filepath.Glob("process" + "/*_mihomo_ip.list")
+		ipFiles, _ := filepath.Glob("process" + "/*_mihomo_ip.txt")
 		for _, file := range ipFiles {
-			catName := strings.TrimSuffix(filepath.Base(file), "_mihomo_ip.list")
-			outFile := fmt.Sprintf("%s/%s_ip.mrs", "publish/mihomo", catName)
-			if err := exec.Command("mihomo", "convert-ruleset", "ipcidr", "text", file, outFile).Run(); err == nil {
-				fmt.Printf("Successfully compiled: %s\n", outFile)
-			}
+			wg.Add(1)
+			
+			go func(f string) {
+				defer wg.Done()
+				
+				catName := strings.TrimSuffix(filepath.Base(f), "_mihomo_ip.txt")
+				outFile := fmt.Sprintf("%s/%s_ip.mrs", "publish/mihomo", catName)
+				if err := exec.Command("mihomo", "convert-ruleset", "ipcidr", "text", f, outFile).Run(); err == nil {
+					fmt.Printf("Successfully compiled: %s\n", outFile)
+				} else {
+					fmt.Printf("Failed to compile (mihomo ip): %s\n", f)
+				}
+			}(file)
 		}
 	}
+	wg.Wait() 
 }
 
 func checkCommand(name string) bool {

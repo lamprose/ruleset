@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 
-	"DIY-Ruleset/core"
+	"diy-ruleset/core"
 )
 
 func main() {
@@ -14,6 +14,10 @@ func main() {
 
 	_ = os.RemoveAll("publish")
 	_ = os.RemoveAll("process")
+	_ = os.RemoveAll("temp")
+
+	defer os.RemoveAll("process")
+	defer os.RemoveAll("temp")
 
 	if _, err := os.Stat("config.yaml"); os.IsNotExist(err) {
 		fmt.Println("config.yaml not detected; initializing default configuration using config-example.yaml...")
@@ -56,7 +60,7 @@ func main() {
 			allResults[c.Name] = res
 			mu.Unlock()
 
-			core.ExportFiles(c, res, cfg)
+			core.ExportFiles(c, res, cfg, false)
 		}(cat)
 	}
 

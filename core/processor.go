@@ -27,20 +27,23 @@ func getCachedRegex(pattern string) *regexp.Regexp {
 }
 
 type ProcessedResult struct {
-	DomRules           map[string][]string
-	IPRules            map[string][]string
-	WhiteDomRules      map[string][]string
-	RawCount           int
-	AddCount           int
-	RmCount            int
-	FinalCount         int
-	WhiteCount         int
-	ExactCounts        map[string]int
-	UpstreamStats      map[string]int
-	WhiteUpstreamStats map[string]int
-	RawAdblockRules    map[string]bool
-	RawDnsmasqRules    map[string]bool
-	RawSmartDNSRules   map[string]bool
+	DomRules               map[string][]string
+	IPRules                map[string][]string
+	WhiteDomRules          map[string][]string
+	RawCount               int
+	AddCount               int
+	RmCount                int
+	FinalCount             int
+	WhiteCount             int
+	ExactCounts            map[string]int
+	UpstreamStats          map[string]int
+	WhiteUpstreamStats     map[string]int
+	RawAdblockRules        []string
+	RawDnsmasqRules        []string
+	RawSmartDNSRules       []string
+	RawWhiteAdblockRules   []string
+	RawWhiteDnsmasqRules   []string
+	RawWhiteSmartDNSRules  []string
 }
 
 func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
@@ -53,16 +56,21 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 	ipv4Trie, ipv6Trie := &IPv4Trie{}, &IPv6Trie{}
 
 	res := &ProcessedResult{
-		DomRules:           make(map[string][]string),
-		IPRules:            make(map[string][]string),
-		WhiteDomRules:      make(map[string][]string),
-		UpstreamStats:      make(map[string]int),
-		WhiteUpstreamStats: make(map[string]int),
-		RawAdblockRules:    make(map[string]bool),
-		RawDnsmasqRules:    make(map[string]bool),
-		RawSmartDNSRules:   make(map[string]bool),
-		ExactCounts:        make(map[string]int),
+		DomRules:              make(map[string][]string),
+		IPRules:               make(map[string][]string),
+		WhiteDomRules:         make(map[string][]string),
+		UpstreamStats:         make(map[string]int),
+		WhiteUpstreamStats:    make(map[string]int),
+		RawAdblockRules:       make([]string, 0),
+		RawDnsmasqRules:       make([]string, 0),
+		RawSmartDNSRules:      make([]string, 0),
+		RawWhiteAdblockRules:  make([]string, 0),
+		RawWhiteDnsmasqRules:  make([]string, 0),
+		RawWhiteSmartDNSRules: make([]string, 0),
+		ExactCounts:           make(map[string]int),
 	}
+
+	seenRawRules := make(map[string]bool)
 
 	processLine := func(line string, parserType string, isAdd bool, isRm bool, upURL string) {
 		cleanLine := strings.TrimSpace(line)
@@ -70,32 +78,50 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 			return
 		}
 
-		if !isAdd && !isRm {
-			if parserType == "adblock" {
-				res.RawAdblockRules[cleanLine] = true
-			} else if parserType == "dnsmasq" {
-				res.RawDnsmasqRules[cleanLine] = true
-			} else if parserType == "smartdns" {
-				res.RawSmartDNSRules[cleanLine] = true
+		if strings.HasPrefix(cleanLine, "@@") {
+			if (cat.AutoExtractWhite && !isRm) || isAdd {
+				if parserType == "adblock" && !seenRawRules["wa_"+cleanLine] {
+					seenRawRules["wa_"+cleanLine] = true
+					res.RawWhiteAdblockRules = append(res.RawWhiteAdblockRules, cleanLine)
+				} else if parserType == "dnsmasq" && !seenRawRules["wd_"+cleanLine] {
+					seenRawRules["wd_"+cleanLine] = true
+					res.RawWhiteDnsmasqRules = append(res.RawWhiteDnsmasqRules, cleanLine)
+				} else if parserType == "smartdns" && !seenRawRules["ws_"+cleanLine] {
+					seenRawRules["ws_"+cleanLine] = true
+					res.RawWhiteSmartDNSRules = append(res.RawWhiteSmartDNSRules, cleanLine)
+				}
+
+				if w := ParseWhite(cleanLine); w != nil {
+					if w.Type == "DOMAIN" { whiteDomains[w.Value] = true }
+					if w.Type == "DOMAIN-SUFFIX" { whiteSuffixes[w.Value] = true }
+					if w.Type == "DOMAIN-REGEX" { whiteRegexes[w.Value] = true }
+					if upURL != "" { res.WhiteUpstreamStats[upURL]++ }
+					if !isAdd {
+						behavior := cat.WhiteBehavior
+						if behavior == "" { behavior = "remove" }
+						if behavior == "remove" {
+							res.RmCount++
+							rmExact[*w] = true
+							if w.Type == "DOMAIN" { rmDomains[w.Value] = true }
+							if w.Type == "DOMAIN-SUFFIX" { rmSuffixes[w.Value] = true }
+							if w.Type == "DOMAIN-REGEX" { rmRegexes[w.Value] = true }
+						}
+					}
+				}
 			}
+			return 
 		}
 
-		if cat.AutoExtractWhite && !isAdd && !isRm {
-			if w := ParseWhite(cleanLine); w != nil {
-				if w.Type == "DOMAIN" { whiteDomains[w.Value] = true }
-				if w.Type == "DOMAIN-SUFFIX" { whiteSuffixes[w.Value] = true }
-				if w.Type == "DOMAIN-REGEX" { whiteRegexes[w.Value] = true }
-				if upURL != "" { res.WhiteUpstreamStats[upURL]++ }
-				behavior := cat.WhiteBehavior
-				if behavior == "" { behavior = "remove" }
-				if behavior == "remove" {
-					res.RmCount++
-					rmExact[*w] = true
-					if w.Type == "DOMAIN" { rmDomains[w.Value] = true }
-					if w.Type == "DOMAIN-SUFFIX" { rmSuffixes[w.Value] = true }
-					if w.Type == "DOMAIN-REGEX" { rmRegexes[w.Value] = true }
-				}
-				return
+		if !isAdd && !isRm {
+			if parserType == "adblock" && !seenRawRules["a_"+cleanLine] {
+				seenRawRules["a_"+cleanLine] = true
+				res.RawAdblockRules = append(res.RawAdblockRules, cleanLine)
+			} else if parserType == "dnsmasq" && !seenRawRules["d_"+cleanLine] {
+				seenRawRules["d_"+cleanLine] = true
+				res.RawDnsmasqRules = append(res.RawDnsmasqRules, cleanLine)
+			} else if parserType == "smartdns" && !seenRawRules["s_"+cleanLine] {
+				seenRawRules["s_"+cleanLine] = true
+				res.RawSmartDNSRules = append(res.RawSmartDNSRules, cleanLine)
 			}
 		}
 
@@ -234,10 +260,35 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 		}
 	}
 
+	validLocalParsers := map[string]bool{
+		"clash": true, "v2ray": true, "adblock": true, "hosts": true,
+		"dnsmasq": true, "smartdns": true, "surge": true, "shadowrocket": true,
+		"quantumultx": true, "loon": true, "stash": true, "egern": true, "white": true,
+	}
+
+	processLocalLine := func(line string, isAdd bool, isRm bool, source string) {
+		cleanLine := strings.TrimSpace(line)
+		if cleanLine == "" || strings.HasPrefix(cleanLine, "#") || strings.HasPrefix(cleanLine, "//") {
+			return
+		}
+
+		parserType := "clash"
+		
+		if eqIdx := strings.Index(cleanLine, "="); eqIdx != -1 {
+			prefix := strings.ToLower(strings.TrimSpace(cleanLine[:eqIdx]))
+			if validLocalParsers[prefix] {
+				parserType = prefix
+				cleanLine = strings.TrimSpace(cleanLine[eqIdx+1:])
+			}
+		}
+
+		processLine(cleanLine, parserType, isAdd, isRm, source)
+	}
+
 	if f, err := os.Open(fmt.Sprintf("add/%s.list", cat.Name)); err == nil {
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
-			processLine(scanner.Text(), "clash", true, false, "Local Add")
+			processLocalLine(scanner.Text(), true, false, "Local Add")
 		}
 		f.Close()
 	}
@@ -245,7 +296,7 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 	if f, err := os.Open(fmt.Sprintf("remove/%s.list", cat.Name)); err == nil {
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
-			processLine(scanner.Text(), "clash", false, true, "Local Remove")
+			processLocalLine(scanner.Text(), false, true, "Local Remove")
 		}
 		f.Close()
 	}
@@ -267,15 +318,7 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 		}
 	}
 
-	var compiledRegexes, compiledRmRegexes []*regexp.Regexp
-	for reg := range regexes {
-		if rmExact[Rule{"DOMAIN-REGEX", reg}] {
-			continue
-		}
-		if c := getCachedRegex(reg); c != nil {
-			compiledRegexes = append(compiledRegexes, c)
-		}
-	}
+	var compiledRmRegexes []*regexp.Regexp
 	for reg := range rmRegexes {
 		if c := getCachedRegex(reg); c != nil {
 			compiledRmRegexes = append(compiledRmRegexes, c)
@@ -309,11 +352,6 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 		if suffixTrie.MatchAnySuffix(d) {
 			return true
 		}
-		for _, re := range compiledRegexes {
-			if re.MatchString(d) {
-				return true
-			}
-		}
 		return false
 	}
 
@@ -333,11 +371,6 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 		}
 		if suffixTrie.MatchParentSuffix(s) {
 			return true
-		}
-		for _, re := range compiledRegexes {
-			if re.MatchString(s) && re.MatchString("test_dedupe."+s) {
-				return true
-			}
 		}
 		return false
 	}
@@ -408,7 +441,7 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 		}
 		t, v := o.Type, o.Value
 
-		if t == "PROCESS-NAME" || t == "PROCESS-PATH" {
+		if t == "PROCESS-NAME" || t == "PROCESS-PATH" || t == "USER-AGENT" || t == "DOMAIN-WILDCARD" || t == "URL-REGEX" {
 			res.DomRules[t] = append(res.DomRules[t], v)
 		} else {
 			res.IPRules[t] = append(res.IPRules[t], v)
@@ -445,7 +478,7 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 		res.WhiteDomRules["DOMAIN-REGEX"] = append(res.WhiteDomRules["DOMAIN-REGEX"], r)
 	}
 
-	for _, k := range []string{"DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN-REGEX", "PROCESS-NAME", "PROCESS-PATH"} {
+	for _, k := range []string{"DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN-REGEX", "DOMAIN-WILDCARD", "URL-REGEX", "PROCESS-NAME", "PROCESS-PATH", "USER-AGENT"} {
 		if v, ok := res.DomRules[k]; ok {
 			sort.Strings(v)
 			res.FinalCount += len(v)
@@ -471,12 +504,12 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 		res.IPRules["IP-CIDR6"] = append(norm, ffff...)
 	}
 
-	for _, k := range []string{"IP-CIDR", "IP-CIDR6", "SRC-IP-CIDR"} {
+	for _, k := range []string{"IP-CIDR", "IP-CIDR6"} {
 		if v, ok := res.IPRules[k]; ok {
 			res.FinalCount += len(v)
 		}
 	}
-	for _, k := range []string{"DST-PORT", "SRC-PORT", "NETWORK", "IP-ASN"} {
+	for _, k := range []string{"DST-PORT", "IP-ASN"} {
 		if v, ok := res.IPRules[k]; ok {
 			sort.Strings(v)
 			res.FinalCount += len(v)

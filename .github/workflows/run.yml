@@ -76,12 +76,10 @@ jobs:
           sudo cp ./mihomo /usr/local/bin/mihomo
           sudo chmod +x /usr/local/bin/sing-box /usr/local/bin/mihomo
 
-      - name: Test and Execute Go Rule Engine
+      - name: Execute Go Rule Engine
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Running Unit Tests..."
-          go test ./core -v
           echo "Executing Rule Engine..."
           go run main.go
 

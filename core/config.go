@@ -47,14 +47,14 @@ type MihomoOutput struct {
 	SingleFile bool `yaml:"single_file"`
 	YAML       bool `yaml:"yaml"`
 	MRS        bool `yaml:"mrs"`
-	List       bool `yaml:"list"`
+	TXT        bool `yaml:"txt"`
 }
 type CatMihomoOutput struct {
 	Enable     *bool `yaml:"enable"`
 	SingleFile *bool `yaml:"single_file"`
 	YAML       *bool `yaml:"yaml"`
 	MRS        *bool `yaml:"mrs"`
-	List       *bool `yaml:"list"`
+	TXT        *bool `yaml:"txt"`
 }
 
 type V2rayOutput struct {
@@ -79,7 +79,6 @@ type Category struct {
 	Name             string `yaml:"name"`
 	AutoExtractWhite bool   `yaml:"auto_extract_white"`
 	PublishWhite     bool   `yaml:"publish_white"`
-	WhiteName        string `yaml:"white_name"`
 	WhiteBehavior    string `yaml:"white_behavior"`
 
 	Singbox      *CatSingboxOutput `yaml:"singbox"`
@@ -158,7 +157,7 @@ func ResolveClients(global GlobalConfig, cat Category) ResolvedClientConfig {
 		res.Mihomo.SingleFile = resolveVal(cat.Mihomo.SingleFile, global.Mihomo.SingleFile)
 		res.Mihomo.YAML = resolveVal(cat.Mihomo.YAML, global.Mihomo.YAML)
 		res.Mihomo.MRS = resolveVal(cat.Mihomo.MRS, global.Mihomo.MRS)
-		res.Mihomo.List = resolveVal(cat.Mihomo.List, global.Mihomo.List)
+		res.Mihomo.TXT = resolveVal(cat.Mihomo.TXT, global.Mihomo.TXT)
 	}
 	if cat.V2ray != nil {
 		res.V2ray.Enable = resolveVal(cat.V2ray.Enable, global.V2ray.Enable)

@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bufio"
 	"net/netip"
 	"os"
 	"regexp"
@@ -16,25 +15,35 @@ var (
 	smartdnsRegex      = regexp.MustCompile(`^address\s+/(.+?)/`)
 	nakedDomainRegex   = regexp.MustCompile(`^[a-zA-Z0-9_*-]+(?:\.[a-zA-Z0-9_*-]+)*$`)
 	adblockDomainRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)+$`)
-	inferAdblockRe  = regexp.MustCompile(`^(?:@@)?\|\|[^\^]+\^`)
-	inferHostsRe    = regexp.MustCompile(`^(?:127\.0\.0\.1|0\.0\.0\.0|::1)\s+[a-zA-Z0-9.-]+`)
-	inferDnsmasqRe  = regexp.MustCompile(`^(?:server|address|local)=/[^/]+/[^/]+`)
-	inferSmartdnsRe = regexp.MustCompile(`^(?:address|nameserver)\s+/[^/]+/`)
-	inferQxRe       = regexp.MustCompile(`^HOST(?:-SUFFIX|-KEYWORD)?\s*,`)
-	inferV2rayRe    = regexp.MustCompile(`^(?:domain|full|keyword|regexp|regex|ext|include):`)
-	inferClashRe    = regexp.MustCompile(`^DOMAIN(?:-SUFFIX|-KEYWORD|-REGEX)?\s*,`)
-	inferEgernRe    = regexp.MustCompile(`^(?:domain_set|domain_suffix_set|domain_keyword_set|domain_regex_set|ip_cidr_set|ip_cidr6_set|asn_set|user_agent_set):`)
+	inferAdblockRe     = regexp.MustCompile(`^(?:@@)?\|\|[^\^]+\^?`)
+	inferHostsRe       = regexp.MustCompile(`^(?:127\.0\.0\.1|0\.0\.0\.0|::1)\s+[a-zA-Z0-9.-]+`)
+	inferDnsmasqRe     = regexp.MustCompile(`^(?:server|address|local)=/[^/]+/[^/]+`)
+	inferSmartdnsRe    = regexp.MustCompile(`^(?:address|nameserver)\s+/[^/]+/`)
+	inferQxStrictRe    = regexp.MustCompile(`(?i)^(?:host(?:-suffix|-keyword|-wildcard)?|ip6-cidr)\s*,`)
+	inferSurgeStrictRe = regexp.MustCompile(`^(?:DEST-PORT|USER-AGENT|URL-REGEX|DOMAIN-SET)\s*,`)
+	inferClashStrictRe = regexp.MustCompile(`^(?:payload:|DST-PORT|PROCESS-NAME|PROCESS-PATH|DOMAIN-REGEX)\s*,?`)
+	inferGenericRe     = regexp.MustCompile(`^(?:DOMAIN(?:-SUFFIX|-KEYWORD|-WILDCARD)?|IP-CIDR6?|IP-ASN)\s*,`)
+	inferV2rayRe       = regexp.MustCompile(`^(?:domain|full|keyword|regexp|regex|ext|include):`)
+	inferEgernRe       = regexp.MustCompile(`^(?:domain_set|domain_suffix_set|domain_keyword_set|domain_regex_set|domain_wildcard_set|ip_cidr_set|ip_cidr6_set|asn_set|user_agent_set|url_regex_set|dest_port_set):`)
+	inferIPRe          = regexp.MustCompile(`^(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?$|^(?:[0-9a-fA-F:]+:+)+[0-9a-fA-F]+(?:/\d{1,3})?$`)
 )
 
 func Parse(line, format string) *Rule {
 	line = strings.TrimSpace(line)
-	if idx := strings.Index(line, "#"); idx != -1 {
+	if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") || strings.HasPrefix(line, "!") || strings.HasPrefix(line, ";") || strings.HasPrefix(line, "[") {
+		return nil
+	}
+	if idx := strings.Index(line, " #"); idx != -1 {
+		line = strings.TrimSpace(line[:idx])
+	} else if idx := strings.Index(line, "\t#"); idx != -1 {
 		line = strings.TrimSpace(line[:idx])
 	}
-	if idx := strings.Index(line, "//"); idx != -1 {
+	if idx := strings.Index(line, " //"); idx != -1 {
+		line = strings.TrimSpace(line[:idx])
+	} else if idx := strings.Index(line, "\t//"); idx != -1 {
 		line = strings.TrimSpace(line[:idx])
 	}
-	if line == "" || strings.HasPrefix(line, "!") || strings.HasPrefix(line, ";") || strings.HasPrefix(line, "[") {
+	if line == "" {
 		return nil
 	}
 
@@ -62,7 +71,6 @@ func Parse(line, format string) *Rule {
 	default:
 		r = ParseClash(line)
 	}
-
 	if r != nil && (r.Type == "DOMAIN" || r.Type == "DOMAIN-SUFFIX" || r.Type == "DOMAIN-KEYWORD") {
 		r.Value = strings.ToLower(r.Value)
 	}
@@ -78,14 +86,12 @@ func ParseClash(line string) *Rule {
 	if line == "payload:" || line == "" {
 		return nil
 	}
-
 	if r := parseStandardClash(line); r != nil {
 		return r
 	}
 	if r := parseIPOrCIDR(line); r != nil {
 		return r
 	}
-
 	return parseFallback(line)
 }
 
@@ -100,7 +106,6 @@ func ParseEgern(line string, section string) *Rule {
 	if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
 		return nil
 	}
-
 	switch section {
 	case "domain_set":
 		return &Rule{Type: "DOMAIN", Value: line}
@@ -108,6 +113,10 @@ func ParseEgern(line string, section string) *Rule {
 		return &Rule{Type: "DOMAIN-SUFFIX", Value: strings.TrimPrefix(line, ".")}
 	case "domain_keyword_set":
 		return &Rule{Type: "DOMAIN-KEYWORD", Value: line}
+	case "domain_wildcard_set":
+		return &Rule{Type: "DOMAIN-WILDCARD", Value: line}
+	case "url_regex_set":
+		return &Rule{Type: "URL-REGEX", Value: line}
 	case "domain_regex_set":
 		return &Rule{Type: "DOMAIN-REGEX", Value: line}
 	case "ip_cidr_set":
@@ -119,8 +128,9 @@ func ParseEgern(line string, section string) *Rule {
 	case "asn_set":
 		return &Rule{Type: "IP-ASN", Value: line}
 	case "user_agent_set":
-		cleanVal := strings.TrimSuffix(line, "*")
-		return &Rule{Type: "PROCESS-NAME", Value: cleanVal}
+		return &Rule{Type: "USER-AGENT", Value: strings.TrimSuffix(line, "*")}
+	case "dest_port_set":
+		return &Rule{Type: "DST-PORT", Value: line}
 	default:
 		if strings.HasPrefix(line, ".") {
 			return &Rule{Type: "DOMAIN-SUFFIX", Value: strings.TrimPrefix(line, ".")}
@@ -160,7 +170,6 @@ func ParseV2Ray(line string) *Rule {
 	if nakedDomainRegex.MatchString(line) {
 		return &Rule{"DOMAIN-KEYWORD", line}
 	}
-
 	return nil
 }
 
@@ -168,11 +177,16 @@ func ParseAdblock(line string) *Rule {
 	if strings.Contains(line, "$") {
 		return nil
 	}
-
 	if strings.HasPrefix(line, "||") && strings.HasSuffix(line, "^") {
 		val := line[2 : len(line)-1]
 		if strings.ContainsAny(val, "/?=:") {
 			return nil
+		}
+		if _, err := netip.ParseAddr(val); err == nil {
+			if strings.Contains(val, ":") {
+				return &Rule{"IP-CIDR6", val + "/128"}
+			}
+			return &Rule{"IP-CIDR", val + "/32"}
 		}
 		if strings.Contains(val, "*") {
 			return &Rule{"DOMAIN-REGEX", "^(.+\\.)?" + strings.ReplaceAll(strings.ReplaceAll(val, ".", "\\."), "*", ".*") + "$"}
@@ -181,10 +195,6 @@ func ParseAdblock(line string) *Rule {
 			return &Rule{"DOMAIN-SUFFIX", val}
 		}
 		return nil
-	}
-
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, line); matched {
-		return &Rule{"DOMAIN-KEYWORD", line}
 	}
 	return nil
 }
@@ -220,27 +230,33 @@ func parseStandardClash(line string) *Rule {
 	if !strings.Contains(line, ",") {
 		return nil
 	}
-
 	idx := strings.Index(line, ",")
 	t := strings.ToUpper(strings.TrimSpace(line[:idx]))
 	v := strings.TrimSpace(line[idx+1:])
 	v = strings.Trim(v, "'\"\t ")
-
 	parts := strings.Split(v, ",")
 	cleanV := strings.TrimSpace(parts[0])
-
 	if t == "HOST" {
 		t = "DOMAIN"
-	}
-	if t == "HOST-SUFFIX" {
+	} else if t == "HOST-SUFFIX" {
 		t = "DOMAIN-SUFFIX"
-	}
-	if t == "HOST-KEYWORD" {
+	} else if t == "HOST-KEYWORD" {
 		t = "DOMAIN-KEYWORD"
+	} else if t == "HOST-WILDCARD" {
+		t = "DOMAIN-WILDCARD"
+	} else if t == "DEST-PORT" || t == "PORT" {
+		t = "DST-PORT"
+	} else if t == "IP4-CIDR" {
+		t = "IP-CIDR"
+	} else if t == "IP6-CIDR" {
+		t = "IP-CIDR6"
 	}
-
-	valid := map[string]bool{"DOMAIN": true, "DOMAIN-SUFFIX": true, "DOMAIN-KEYWORD": true, "DOMAIN-REGEX": true, "IP-CIDR": true, "IP-CIDR6": true, "SRC-IP-CIDR": true, "DST-PORT": true, "SRC-PORT": true, "NETWORK": true, "PROCESS-NAME": true, "PROCESS-PATH": true, "IP-ASN": true}
-
+	valid := map[string]bool{
+		"DOMAIN": true, "DOMAIN-SUFFIX": true, "DOMAIN-KEYWORD": true, "DOMAIN-REGEX": true, 
+		"DOMAIN-WILDCARD": true, "URL-REGEX": true, 
+		"IP-CIDR": true, "IP-CIDR6": true, 
+		"DST-PORT": true, "PROCESS-NAME": true, "PROCESS-PATH": true, "USER-AGENT": true, "IP-ASN": true,
+	}
 	if valid[t] {
 		if t == "DOMAIN-REGEX" {
 			cleanV = v
@@ -252,20 +268,17 @@ func parseStandardClash(line string) *Rule {
 			}
 			return &Rule{Type: t, Value: cleanV}
 		}
-
 		if (t == "DOMAIN" || t == "DOMAIN-SUFFIX") {
 			if r := normalizeWildcard(cleanV, t); r != nil {
 				return r
 			}
 		}
-
 		if t == "IP-CIDR" && !strings.Contains(cleanV, "/") {
 			cleanV += "/32"
 		}
 		if t == "IP-CIDR6" && !strings.Contains(cleanV, "/") {
 			cleanV += "/128"
 		}
-
 		return &Rule{Type: t, Value: cleanV}
 	}
 	return nil
@@ -275,15 +288,12 @@ func parseFallback(line string) *Rule {
 	if line == "Mijia Cloud" {
 		return &Rule{"DOMAIN-REGEX", `^Mijia\sCloud$`}
 	}
-
 	if r := normalizeWildcard(line, "DOMAIN-REGEX"); r != nil {
 		return r
 	}
-
 	if nakedDomainRegex.MatchString(line) {
 		return &Rule{"DOMAIN", line}
 	}
-
 	if matches := hostsRegex.FindStringSubmatch(line); len(matches) > 1 {
 		domain := matches[1]
 		if isValidHostsDomain(domain) {
@@ -293,7 +303,6 @@ func parseFallback(line string) *Rule {
 			return &Rule{"DOMAIN", domain}
 		}
 	}
-
 	if matches := dnsmasqRegex.FindStringSubmatch(line); len(matches) > 1 {
 		return &Rule{"DOMAIN-SUFFIX", matches[1]}
 	}
@@ -329,54 +338,35 @@ func ParseSmartDNS(line string) *Rule {
 
 func ParseWhite(line string) *Rule {
 	line = strings.TrimSpace(line)
-	
-	if strings.Contains(line, "$") {
+	if strings.ContainsAny(line, "$~") {
 		return nil
 	}
-
 	if !strings.HasPrefix(line, "@@") {
 		return nil
 	}
-
-	isSuffix := strings.HasPrefix(line, "@@||")
-	isDomain := false
-	if !isSuffix {
-		isDomain = strings.HasPrefix(line, "@@|")
-	}
-
-	if !isSuffix && !isDomain {
-		return nil
-	}
-
-	val := line
-	if isSuffix {
-		val = strings.TrimPrefix(val, "@@||")
-	} else {
-		val = strings.TrimPrefix(val, "@@|")
-	}
-
-	if idx := strings.Index(val, "^"); idx != -1 {
-		val = val[:idx]
-	}
-
-	if strings.ContainsAny(val, "/?=:") {
-		return nil
-	}
-
-	if strings.Contains(val, "*") {
-		if isSuffix {
-			return &Rule{"DOMAIN-REGEX", "^(.+\\.)?" + strings.ReplaceAll(strings.ReplaceAll(val, ".", "\\."), "*", ".*") + "$"}
+	val := line[2:]
+	if strings.HasPrefix(val, "||") && strings.HasSuffix(val, "^") {
+		clean := val[2 : len(val)-1]
+		if !strings.ContainsAny(clean, "/?=:,|") {
+			if strings.Contains(clean, "*") {
+				regexPattern := "^(.+\\.)?" + strings.ReplaceAll(strings.ReplaceAll(clean, ".", "\\."), "*", ".*") + "$"
+				return &Rule{"DOMAIN-REGEX", regexPattern}
+			} else if adblockDomainRegex.MatchString(clean) {
+				return &Rule{"DOMAIN-SUFFIX", clean}
+			}
 		}
-		return &Rule{"DOMAIN-REGEX", "^" + strings.ReplaceAll(strings.ReplaceAll(val, ".", "\\."), "*", ".*") + "$"}
 	}
-
-	if adblockDomainRegex.MatchString(val) {
-		if isSuffix {
-			return &Rule{"DOMAIN-SUFFIX", val}
+	if strings.HasPrefix(val, "|") && strings.HasSuffix(val, "|") && !strings.HasPrefix(val, "||") {
+		clean := val[1 : len(val)-1]
+		if !strings.ContainsAny(clean, "/?=:,^") {
+			if strings.Contains(clean, "*") {
+				regexPattern := "^" + strings.ReplaceAll(strings.ReplaceAll(clean, ".", "\\."), "*", ".*") + "$"
+				return &Rule{"DOMAIN-REGEX", regexPattern}
+			} else if adblockDomainRegex.MatchString(clean) {
+				return &Rule{"DOMAIN", clean}
+			}
 		}
-		return &Rule{"DOMAIN", val}
 	}
-
 	return nil
 }
 
@@ -417,48 +407,46 @@ func ParseAppleClients(line string) *Rule {
 }
 
 func InferParser(filePath string) string {
-	file, err := os.Open(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return "clash"
 	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
+	lines := strings.Split(string(data), "\n")
 	scores := make(map[string]int)
-	validLineCount := 0
-	const maxSampleLines = 30
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		
+	scoreLine := func(line string) {
+		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") || strings.HasPrefix(line, "!") {
-			continue
+			return
 		}
-
-		if inferAdblockRe.MatchString(line) {
-			scores["adblock"]++
-		} else if inferHostsRe.MatchString(line) {
-			scores["hosts"]++
-		} else if inferDnsmasqRe.MatchString(line) {
-			scores["dnsmasq"]++
-		} else if inferSmartdnsRe.MatchString(line) {
-			scores["smartdns"]++
-		} else if inferQxRe.MatchString(line) {
-			scores["quantumultx"]++
-		} else if inferV2rayRe.MatchString(line) {
-			scores["v2ray"]++
-		} else if inferEgernRe.MatchString(line) {
-			scores["egern"]++
-		} else if inferClashRe.MatchString(line) || line == "payload:" {
-			scores["clash"]++
-		}
-
-		validLineCount++
-		if validLineCount >= maxSampleLines {
-			break
+		if inferAdblockRe.MatchString(line) { scores["adblock"] += 10 } else 
+		if inferHostsRe.MatchString(line) { scores["hosts"] += 10 } else 
+		if inferDnsmasqRe.MatchString(line) { scores["dnsmasq"] += 10 } else 
+		if inferSmartdnsRe.MatchString(line) { scores["smartdns"] += 10 } else 
+		if inferEgernRe.MatchString(line) { scores["egern"] += 100 } else 
+		if inferV2rayRe.MatchString(line) { scores["v2ray"] += 10 } else 
+		if inferQxStrictRe.MatchString(line) { scores["quantumultx"] += 100 } else 
+		if inferSurgeStrictRe.MatchString(line) { scores["surge"] += 100 } else 
+		if inferClashStrictRe.MatchString(line) || line == "payload:" || strings.HasPrefix(line, "- ") { scores["clash"] += 100 } else 
+		if inferGenericRe.MatchString(line) {
+			scores["clash"] += 1; scores["surge"] += 1; scores["shadowrocket"] += 1
+		} else if inferIPRe.MatchString(line) {
+			scores["clash"] += 1
 		}
 	}
-
+	headLimit := 500
+	if len(lines) < headLimit {
+		headLimit = len(lines)
+	}
+	for i := 0; i < headLimit; i++ {
+		scoreLine(lines[i])
+	}
+	tailStart := len(lines) - 500
+	if tailStart < headLimit {
+		tailStart = headLimit
+	}
+	for i := tailStart; i < len(lines); i++ {
+		scoreLine(lines[i])
+	}
 	bestParser := "clash"
 	maxScore := 0
 	for parser, score := range scores {
@@ -467,6 +455,5 @@ func InferParser(filePath string) string {
 			bestParser = parser
 		}
 	}
-
 	return bestParser
 }

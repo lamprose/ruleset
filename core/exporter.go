@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -39,7 +38,7 @@ func writeToFile(path string, data []byte) {
 	}
 }
 
-func ExportFiles(cat Category, res *ProcessedResult, cfg *Config) {
+func ExportFiles(cat Category, res *ProcessedResult, cfg *Config, isWhite bool) {
 	ensureDir("process")
 	ensureDir("publish/singbox")
 	ensureDir("publish/mihomo")
@@ -57,11 +56,10 @@ func ExportFiles(cat Category, res *ProcessedResult, cfg *Config) {
 	sbKeys := map[string]string{
 		"DOMAIN": "domain", "DOMAIN-SUFFIX": "domain_suffix", "DOMAIN-KEYWORD": "domain_keyword", "DOMAIN-REGEX": "domain_regex",
 		"PROCESS-NAME": "process_name", "PROCESS-PATH": "process_path",
-		"IP-CIDR": "ip_cidr", "IP-CIDR6": "ip_cidr", "SRC-IP-CIDR": "source_ip_cidr",
-		"DST-PORT": "port", "SRC-PORT": "source_port", "NETWORK": "network", "IP-ASN": "ip_asn",
+		"IP-CIDR": "ip_cidr", "IP-CIDR6": "ip_cidr", "DST-PORT": "port",
 	}
-	domKeys := []string{"DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN-REGEX", "PROCESS-NAME", "PROCESS-PATH"}
-	ipKeys := []string{"SRC-IP-CIDR", "DST-PORT", "SRC-PORT", "NETWORK", "IP-ASN"}
+	domKeys := []string{"DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN-WILDCARD", "DOMAIN-REGEX", "URL-REGEX", "PROCESS-NAME", "PROCESS-PATH", "USER-AGENT"}
+	ipKeys := []string{"DST-PORT", "IP-ASN"}
 
 	countRules := func(dom map[string][]string, ip map[string][]string) int {
 		c := 0
@@ -95,7 +93,22 @@ func ExportFiles(cat Category, res *ProcessedResult, cfg *Config) {
 		srDom := SingboxRuleSet{Version: 5, Rules: []map[string]any{}}
 		for _, t := range domKeys {
 			if vals, ok := sbDomRules[t]; ok && len(vals) > 0 {
-				srDom.Rules = append(srDom.Rules, map[string]any{sbKeys[t]: vals})
+				var finalVals []string
+				outType := t
+				
+				if t == "DOMAIN-WILDCARD" {
+					outType = "DOMAIN-REGEX"
+					for _, v := range vals { finalVals = append(finalVals, wildcardToRegex(v)) }
+				} else if t == "URL-REGEX" || t == "USER-AGENT" {
+					continue
+				} else {
+					finalVals = vals
+				}
+				
+				sbKey := sbKeys[outType]
+				if sbKey == "" { continue }
+				
+				srDom.Rules = append(srDom.Rules, map[string]any{sbKey: finalVals})
 				hasDom = true
 			}
 		}
@@ -115,16 +128,16 @@ func ExportFiles(cat Category, res *ProcessedResult, cfg *Config) {
 
 		for _, t := range ipKeys {
 			if vals, ok := sbIPRules[t]; ok && len(vals) > 0 {
-				if t == "DST-PORT" || t == "SRC-PORT" || t == "IP-ASN" {
-					srIP.Rules = append(srIP.Rules, map[string]any{sbKeys[t]: toPortArray(vals)})
-					if t != "IP-ASN" {
-						srIP_SRS.Rules = append(srIP_SRS.Rules, map[string]any{sbKeys[t]: toPortArray(vals)})
-					}
+				sbKey := sbKeys[t]
+				if sbKey == "" {
+					continue
+				}
+				if t == "DST-PORT" {
+					srIP.Rules = append(srIP.Rules, map[string]any{sbKey: toPortArray(vals)})
+					srIP_SRS.Rules = append(srIP_SRS.Rules, map[string]any{sbKey: toPortArray(vals)})
 				} else {
-					srIP.Rules = append(srIP.Rules, map[string]any{sbKeys[t]: vals})
-					if t != "IP-ASN" {
-						srIP_SRS.Rules = append(srIP_SRS.Rules, map[string]any{sbKeys[t]: vals})
-					}
+					srIP.Rules = append(srIP.Rules, map[string]any{sbKey: vals})
+					srIP_SRS.Rules = append(srIP_SRS.Rules, map[string]any{sbKey: vals})
 				}
 				hasIP = true
 			}
@@ -163,11 +176,12 @@ func ExportFiles(cat Category, res *ProcessedResult, cfg *Config) {
 		res.ExactCounts["mihomo_ip"] = countRules(nil, miIPRules)
 		res.ExactCounts["mihomo_total"] = res.ExactCounts["mihomo_dom"] + res.ExactCounts["mihomo_ip"]
 		
-		var yamlDomLines, yamlIPLines, listDomLines, listIPLines []string
+		var yamlDomLines, yamlIPLines, txtDomLines, txtIPLines []string
 		hasDom, hasIP := false, false
 
 		for _, t := range domKeys {
 			if vals, ok := miDomRules[t]; ok && len(vals) > 0 {
+				if t == "URL-REGEX" || t == "USER-AGENT" { continue }
 				for _, v := range vals {
 					yamlDomLines = append(yamlDomLines, fmt.Sprintf("%s,%s", t, v))
 				}
@@ -175,22 +189,23 @@ func ExportFiles(cat Category, res *ProcessedResult, cfg *Config) {
 			}
 		}
 		if hasDom {
-			for _, s := range miDomRules["DOMAIN-SUFFIX"] { listDomLines = append(listDomLines, "+."+s) }
-			for _, d := range miDomRules["DOMAIN"] { listDomLines = append(listDomLines, d) }
+			for _, s := range miDomRules["DOMAIN-SUFFIX"] { txtDomLines = append(txtDomLines, "+."+s) }
+			for _, d := range miDomRules["DOMAIN"] { txtDomLines = append(txtDomLines, d) }
+			for _, w := range miDomRules["DOMAIN-WILDCARD"] { txtDomLines = append(txtDomLines, w) }
 			for _, r := range miDomRules["DOMAIN-REGEX"] {
 				w := toMihomoWildcard(r)
 				if w != "" && !strings.ContainsAny(w, "()[]|?^$") {
-					listDomLines = append(listDomLines, w)
+					txtDomLines = append(txtDomLines, w)
 				}
 			}
 		}
 
-		for _, k := range []string{"IP-CIDR", "IP-CIDR6", "SRC-IP-CIDR", "DST-PORT", "SRC-PORT", "NETWORK", "IP-ASN"} {
+		for _, k := range []string{"IP-CIDR", "IP-CIDR6", "DST-PORT", "IP-ASN"} {
 			if vals, ok := miIPRules[k]; ok && len(vals) > 0 {
 				for _, v := range vals {
 					yamlIPLines = append(yamlIPLines, fmt.Sprintf("%s,%s", k, v))
-					if k == "IP-CIDR" || k == "IP-CIDR6" || k == "SRC-IP-CIDR" {
-						listIPLines = append(listIPLines, strings.Split(v, ",")[0])
+					if k == "IP-CIDR" || k == "IP-CIDR6" {
+						txtIPLines = append(txtIPLines, strings.Split(v, ",")[0])
 					}
 				}
 				hasIP = true
@@ -207,8 +222,8 @@ func ExportFiles(cat Category, res *ProcessedResult, cfg *Config) {
 				writeToFile(fmt.Sprintf("%s/%s.yaml", "publish/mihomo", name), []byte(yaml.String()))
 			}
 			
-			if catOut.Mihomo.List && len(classicalLines) > 0 {
-				writeToFile(fmt.Sprintf("%s/%s.list", "publish/mihomo", name), []byte(strings.Join(classicalLines, "\n")))
+			if catOut.Mihomo.TXT && len(classicalLines) > 0 {
+				writeToFile(fmt.Sprintf("%s/%s.txt", "publish/mihomo", name), []byte(strings.Join(classicalLines, "\n")))
 			}
 		}
 
@@ -221,74 +236,93 @@ func ExportFiles(cat Category, res *ProcessedResult, cfg *Config) {
 		}
 
 		if catOut.Mihomo.MRS {
-			if len(listDomLines) > 0 {
-				writeToFile(fmt.Sprintf("%s/%s_mihomo_domain.list", "process", catName), []byte(strings.Join(listDomLines, "\n")))
+			if len(txtDomLines) > 0 {
+				writeToFile(fmt.Sprintf("%s/%s_mihomo_domain.txt", "process", catName), []byte(strings.Join(txtDomLines, "\n")))
 			}
-			if len(listIPLines) > 0 {
-				writeToFile(fmt.Sprintf("%s/%s_mihomo_ip.list", "process", catName), []byte(strings.Join(listIPLines, "\n")))
+			if len(txtIPLines) > 0 {
+				writeToFile(fmt.Sprintf("%s/%s_mihomo_ip.txt", "process", catName), []byte(strings.Join(txtIPLines, "\n")))
 			}
 		}
 	}
 
 	if cat.PublishAdblock || cat.PublishDnsmasq || cat.PublishSmartDNS {
-		adblockMap := make(map[string]bool)
-		dnsmasqMap := make(map[string]bool)
-		smartdnsMap := make(map[string]bool)
+		var adblockLines, dnsmasqLines, smartdnsLines []string
+		adblockDedupe := make(map[string]bool)
+		dnsmasqDedupe := make(map[string]bool)
+		smartdnsDedupe := make(map[string]bool)
 
-		dnsmasqTpl := "address=/%s/0.0.0.0"
-		smartdnsTpl := "address /%s/#"
-
-		if cat.DnsmasqServer != "" {
-			dnsmasqTpl = fmt.Sprintf("server=/%%s/%s", cat.DnsmasqServer)
-		}
-		if cat.SmartdnsServer != "" {
-			smartdnsTpl = fmt.Sprintf("nameserver /%%s/%s", cat.SmartdnsServer)
+		addRule := func(lines *[]string, dedupe map[string]bool, rule string) {
+			if !dedupe[rule] {
+				dedupe[rule] = true
+				*lines = append(*lines, rule)
+			}
 		}
 
 		for _, s := range res.DomRules["DOMAIN-SUFFIX"] {
-			if cat.PublishAdblock { adblockMap["||"+s+"^"] = true }
-			if cat.PublishSmartDNS { smartdnsMap[fmt.Sprintf(smartdnsTpl, s)] = true }
-			if cat.PublishDnsmasq { dnsmasqMap[fmt.Sprintf(dnsmasqTpl, s)] = true }
+			if cat.PublishAdblock {
+				if isWhite { addRule(&adblockLines, adblockDedupe, "@@||"+s+"^") 
+				} else { addRule(&adblockLines, adblockDedupe, "||"+s+"^") }
+			}
 		}
 		for _, d := range res.DomRules["DOMAIN"] {
-			if cat.PublishAdblock { adblockMap["||"+d+"^"] = true }
-			if cat.PublishSmartDNS { smartdnsMap[fmt.Sprintf(smartdnsTpl, d)] = true }
-			if cat.PublishDnsmasq { dnsmasqMap[fmt.Sprintf(dnsmasqTpl, d)] = true }
+			if cat.PublishAdblock {
+				if isWhite { addRule(&adblockLines, adblockDedupe, "@@|"+d+"|") 
+				} else { addRule(&adblockLines, adblockDedupe, "||"+d+"^") }
+			}
 		}
-		for _, k := range res.DomRules["DOMAIN-KEYWORD"] {
-			if cat.PublishAdblock { adblockMap[k] = true }
+
+		if cat.PublishAdblock && !isWhite {
+			for _, s := range res.WhiteDomRules["DOMAIN-SUFFIX"] {
+				addRule(&adblockLines, adblockDedupe, "@@||"+s+"^")
+			}
+			for _, d := range res.WhiteDomRules["DOMAIN"] {
+				addRule(&adblockLines, adblockDedupe, "@@|"+d+"|")
+			}
+			for _, l := range res.RawWhiteAdblockRules {
+				addRule(&adblockLines, adblockDedupe, l)
+			}
+		}
+
+		if !isWhite {
+			dnsmasqTpl := "address=/%s/0.0.0.0"
+			smartdnsTpl := "address /%s/#"
+			if cat.DnsmasqServer != "" { dnsmasqTpl = fmt.Sprintf("server=/%%s/%s", cat.DnsmasqServer) }
+			if cat.SmartdnsServer != "" { smartdnsTpl = fmt.Sprintf("nameserver /%%s/%s", cat.SmartdnsServer) }
+
+			for _, s := range res.DomRules["DOMAIN-SUFFIX"] {
+				if cat.PublishSmartDNS { addRule(&smartdnsLines, smartdnsDedupe, fmt.Sprintf(smartdnsTpl, s)) }
+				if cat.PublishDnsmasq { addRule(&dnsmasqLines, dnsmasqDedupe, fmt.Sprintf(dnsmasqTpl, s)) }
+			}
+			for _, d := range res.DomRules["DOMAIN"] {
+				if cat.PublishSmartDNS { addRule(&smartdnsLines, smartdnsDedupe, fmt.Sprintf(smartdnsTpl, d)) }
+				if cat.PublishDnsmasq { addRule(&dnsmasqLines, dnsmasqDedupe, fmt.Sprintf(dnsmasqTpl, d)) }
+			}
 		}
 
 		if cat.PublishAdblock {
-			for l := range res.RawAdblockRules { adblockMap[l] = true }
+			for _, l := range res.RawAdblockRules { addRule(&adblockLines, adblockDedupe, l) }
 		}
-		if cat.PublishDnsmasq {
-			for l := range res.RawDnsmasqRules { dnsmasqMap[l] = true }
-		}
-		if cat.PublishSmartDNS {
-			for l := range res.RawSmartDNSRules { smartdnsMap[l] = true }
+		
+		if !isWhite {
+			if cat.PublishDnsmasq {
+				for _, l := range res.RawDnsmasqRules { addRule(&dnsmasqLines, dnsmasqDedupe, l) }
+			}
+			if cat.PublishSmartDNS {
+				for _, l := range res.RawSmartDNSRules { addRule(&smartdnsLines, smartdnsDedupe, l) }
+			}
 		}
 
-		if cat.PublishAdblock && len(adblockMap) > 0 {
+		if cat.PublishAdblock && len(adblockLines) > 0 {
 			ensureDir("publish/adblock")
-			var lines []string
-			for l := range adblockMap { lines = append(lines, l) }
-			sort.Strings(lines)
-			writeToFile(fmt.Sprintf("publish/adblock/%s.txt", catName), []byte(strings.Join(lines, "\n")))
+			writeToFile(fmt.Sprintf("publish/adblock/%s.txt", catName), []byte(strings.Join(adblockLines, "\n")))
 		}
-		if cat.PublishDnsmasq && len(dnsmasqMap) > 0 {
+		if cat.PublishDnsmasq && len(dnsmasqLines) > 0 {
 			ensureDir("publish/dnsmasq")
-			var lines []string
-			for l := range dnsmasqMap { lines = append(lines, l) }
-			sort.Strings(lines)
-			writeToFile(fmt.Sprintf("publish/dnsmasq/%s.conf", catName), []byte(strings.Join(lines, "\n")))
+			writeToFile(fmt.Sprintf("publish/dnsmasq/%s.conf", catName), []byte(strings.Join(dnsmasqLines, "\n")))
 		}
-		if cat.PublishSmartDNS && len(smartdnsMap) > 0 {
+		if cat.PublishSmartDNS && len(smartdnsLines) > 0 {
 			ensureDir("publish/smartdns")
-			var lines []string
-			for l := range smartdnsMap { lines = append(lines, l) }
-			sort.Strings(lines)
-			writeToFile(fmt.Sprintf("publish/smartdns/%s.conf", catName), []byte(strings.Join(lines, "\n")))
+			writeToFile(fmt.Sprintf("publish/smartdns/%s.conf", catName), []byte(strings.Join(smartdnsLines, "\n")))
 		}
 	}
 
@@ -298,11 +332,15 @@ func ExportFiles(cat Category, res *ProcessedResult, cfg *Config) {
 
 		for _, t := range domKeys {
 			for _, v := range v2DomRules[t] {
+				if t == "URL-REGEX" || t == "USER-AGENT" || t == "PROCESS-NAME" || t == "PROCESS-PATH" { continue }
+
 				prefix := ""
 				if t == "DOMAIN" { prefix = "full:" } else
 				if t == "DOMAIN-SUFFIX" { prefix = "domain:" } else
 				if t == "DOMAIN-REGEX" { prefix = "regexp:" } else
+				if t == "DOMAIN-WILDCARD" { prefix = "regexp:"; v = wildcardToRegex(v) } else
 				if t == "DOMAIN-KEYWORD" { prefix = "" }
+				
 				v2Lines = append(v2Lines, prefix+v)
 			}
 		}
@@ -328,32 +366,64 @@ func ExportFiles(cat Category, res *ProcessedResult, cfg *Config) {
 		}
 	}
 
-	buildAppleLines := func(isQX bool, ruleName string) ([]string, []string) {
+	buildAppleLines := func(clientName string, ruleName string) ([]string, []string) {
 		appleDomRules, appleIPRules := res.DomRules, res.IPRules
 		var domLines, ipLines []string
 		
 		for _, t := range domKeys {
 			for _, v := range appleDomRules[t] {
 				writeType := t
+				writeVal := v
+				
+				switch clientName {
+				case "loon":
+					if t == "DOMAIN-REGEX" || t == "DOMAIN-WILDCARD" { continue }
+					if t == "PROCESS-NAME" || t == "PROCESS-PATH" { continue }
+				case "surge":
+					if t == "DOMAIN-REGEX" { continue }
+					if t == "PROCESS-PATH" { continue }
+				case "quantumultx":
+					if t == "DOMAIN-REGEX" || t == "URL-REGEX" || t == "PROCESS-NAME" || t == "PROCESS-PATH" { continue }
+					writeType = strings.ReplaceAll(t, "DOMAIN", "host")
+					writeType = strings.ToLower(writeType)
+				case "shadowrocket":
+					if t == "DOMAIN-REGEX" { continue }
+					if t == "PROCESS-NAME" || t == "PROCESS-PATH" { continue }
+				case "stash":
+				}
+
 				suffix := ""
-				if isQX {
-					writeType = strings.ReplaceAll(t, "DOMAIN", "HOST")
+				if clientName == "quantumultx" {
 					suffix = "," + ruleName
 				}
-				domLines = append(domLines, fmt.Sprintf("%s,%s%s", writeType, v, suffix))
+				domLines = append(domLines, fmt.Sprintf("%s,%s%s", writeType, writeVal, suffix))
 			}
 		}
-		for _, k := range []string{"IP-CIDR", "IP-CIDR6", "SRC-IP-CIDR", "DST-PORT", "SRC-PORT", "NETWORK", "IP-ASN"} {
+		
+		appleIpKeys := []string{"IP-CIDR", "IP-CIDR6", "DST-PORT", "IP-ASN"}
+		for _, k := range appleIpKeys {
 			for _, v := range appleIPRules[k] {
+				writeType := k
+				
+				switch clientName {
+				case "surge", "loon":
+					if writeType == "DST-PORT" { writeType = "DEST-PORT" }
+				case "quantumultx":
+					if writeType == "DST-PORT" { writeType = "dest-port" }
+					if writeType == "IP-CIDR" { writeType = "ip-cidr" }
+					if writeType == "IP-CIDR6" { writeType = "ip6-cidr" }
+					if writeType == "IP-ASN" { writeType = "ip-asn" }
+				}
+
 				suffix := ""
-				if isQX {
+				if clientName == "quantumultx" {
 					suffix = "," + ruleName
 				} else {
-					if k == "IP-CIDR" || k == "IP-CIDR6" || k == "SRC-IP-CIDR" {
+					if k == "IP-CIDR" || k == "IP-CIDR6" {
 						suffix = ",no-resolve"
 					}
 				}
-				ipLines = append(ipLines, fmt.Sprintf("%s,%s%s", k, v, suffix))
+				ipLines = append(ipLines, fmt.Sprintf("%s,%s%s", writeType, v, suffix))
 			}
 		}
 		return domLines, ipLines
@@ -402,7 +472,7 @@ func ExportFiles(cat Category, res *ProcessedResult, cfg *Config) {
 
 	for _, client := range appleClients {
 		if client.enable {
-			d, i := buildAppleLines(client.isQX, catName)
+			d, i := buildAppleLines(client.name, catName)
 			writeAppleFiles(client.name, true, client.singleFile, d, i)
 		}
 	}
@@ -426,16 +496,23 @@ func ExportFiles(cat Category, res *ProcessedResult, cfg *Config) {
 				sb.WriteString("domain_suffix_set:\n")
 				for _, v := range vals { sb.WriteString(fmt.Sprintf("  - %s\n", v)) }
 			}
-			if vals := doms["DOMAIN-REGEX"]; len(vals) > 0 {
-				sb.WriteString("domain_regex_set:\n")
+			if vals := doms["DOMAIN-WILDCARD"]; len(vals) > 0 {
+				sb.WriteString("domain_wildcard_set:\n")
 				for _, v := range vals { sb.WriteString(fmt.Sprintf("  - %s\n", v)) }
 			}
-			if vals := doms["PROCESS-NAME"]; len(vals) > 0 {
-				sb.WriteString("user_agent_set:\n")
-				for _, v := range vals {
-					sb.WriteString(fmt.Sprintf("  - \"%s*\"\n", v)) 
-				}
+			if vals := doms["DOMAIN-REGEX"]; len(vals) > 0 {
+				sb.WriteString("domain_regex_set:\n")
+				for _, v := range vals { sb.WriteString(fmt.Sprintf("  - \"%s\"\n", v)) }
 			}
+			if vals := doms["URL-REGEX"]; len(vals) > 0 {
+				sb.WriteString("url_regex_set:\n")
+				for _, v := range vals { sb.WriteString(fmt.Sprintf("  - \"%s\"\n", v)) }
+			}
+			if vals := doms["USER-AGENT"]; len(vals) > 0 {
+				sb.WriteString("user_agent_set:\n")
+				for _, v := range vals { sb.WriteString(fmt.Sprintf("  - \"%s\"\n", v)) }
+			}
+
 			if vals := ips["IP-CIDR"]; len(vals) > 0 {
 				sb.WriteString("ip_cidr_set:\n")
 				for _, v := range vals { sb.WriteString(fmt.Sprintf("  - %s\n", v)) }
@@ -446,6 +523,16 @@ func ExportFiles(cat Category, res *ProcessedResult, cfg *Config) {
 			}
 			if vals := ips["IP-ASN"]; len(vals) > 0 {
 				sb.WriteString("asn_set:\n")
+				for _, v := range vals {
+					val := v
+					if !strings.HasPrefix(strings.ToUpper(val), "AS") {
+						val = "AS" + val
+					}
+					sb.WriteString(fmt.Sprintf("  - \"%s\"\n", val))
+				}
+			}
+			if vals := ips["DST-PORT"]; len(vals) > 0 {
+				sb.WriteString("dest_port_set:\n")
 				for _, v := range vals { sb.WriteString(fmt.Sprintf("  - \"%s\"\n", v)) }
 			}
 			return sb.String()
@@ -477,24 +564,20 @@ func ExportFiles(cat Category, res *ProcessedResult, cfg *Config) {
 
 	if cat.PublishWhite && len(res.WhiteDomRules) > 0 {
 		whiteCat := cat
-
-		whiteName := catName + "_white"
-		if cat.WhiteName != "" {
-			whiteName = cat.WhiteName
-		}
-
-		whiteCat.Name = whiteName
+		whiteCat.Name = catName + "_white"
 		whiteCat.PublishWhite = false
-		
-		disableV2ray := false
-		whiteCat.V2ray = &CatV2rayOutput{Enable: &disableV2ray}
-
+		whiteCat.PublishAdblock = false
+		whiteCat.PublishDnsmasq = false
+		whiteCat.PublishSmartDNS = false
 		whiteRes := &ProcessedResult{
 			DomRules: res.WhiteDomRules,
 			IPRules:  make(map[string][]string),
+			ExactCounts: make(map[string]int),
 		}
-
-		ExportFiles(whiteCat, whiteRes, cfg)
+		ExportFiles(whiteCat, whiteRes, cfg, true)
+		for k, v := range whiteRes.ExactCounts {
+			res.ExactCounts[k+"_white"] = v
+		}
 	}
 }
 
@@ -510,10 +593,16 @@ func toMihomoWildcard(r string) string {
 	} else if strings.HasPrefix(clean, ".+\\.") {
 		clean = "." + strings.TrimPrefix(clean, ".+\\.")
 	}
-
 	clean = strings.ReplaceAll(clean, ".*", "*")
 	clean = strings.ReplaceAll(clean, "[^.]+", "*")
 	clean = strings.ReplaceAll(clean, "\\.", ".")
 	clean = strings.ReplaceAll(clean, "\\s", " ")
 	return clean
+}
+
+func wildcardToRegex(w string) string {
+	r := strings.ReplaceAll(w, ".", `\.`)
+	r = strings.ReplaceAll(r, "*", `.*`)
+	r = strings.ReplaceAll(r, "?", `.`)
+	return "^" + r + "$"
 }
