@@ -477,19 +477,34 @@ func GenerateReport(results map[string]*ProcessedResult, cfg *Config) {
 			r, ok := results[cat.Name]
 			if !ok { continue }
 
-			v4File := "publish/cnip/cnipv4.txt"
-			v6File := "publish/cnip/cnipv6.txt"
+			catOut := ResolveClients(cfg.Global, cat)
 
-			if anyFileExists(v4File) {
-				urlV4 := fmt.Sprintf("https://github.com/%s/raw/publish/cnip/cnipv4.txt", os.Getenv("GITHUB_REPOSITORY"))
-				cellDirect, cellProxy := buildLinksCell(ghProxy, enableProxy, LinkDef{"IPv4", urlV4, getFileSize(v4File), true, "&nbsp;"})
-				cnipRows = append(cnipRows, ReportRow{"cnipv4", r.ExactCounts["cnipv4"], cellDirect, cellProxy})
+			buildCnipRow := func(name string, count int) {
+				txtFile := fmt.Sprintf("publish/cnip/%s.txt", name)
+				srsFile := fmt.Sprintf("publish/cnip/%s.srs", name)
+				mrsFile := fmt.Sprintf("publish/cnip/%s.mrs", name)
+				
+				if anyFileExists(txtFile) {
+					var links []LinkDef
+					urlTxt := fmt.Sprintf("https://github.com/%s/raw/publish/cnip/%s.txt", os.Getenv("GITHUB_REPOSITORY"), name)
+					links = append(links, LinkDef{"TXT", urlTxt, getFileSize(txtFile), true, "&nbsp;"})
+
+					if catOut.Singbox.SRS && anyFileExists(srsFile) {
+						urlSrs := fmt.Sprintf("https://github.com/%s/raw/publish/cnip/%s.srs", os.Getenv("GITHUB_REPOSITORY"), name)
+						links = append(links, LinkDef{"SRS", urlSrs, getFileSize(srsFile), true, "&nbsp;"})
+					}
+					if catOut.Mihomo.MRS && anyFileExists(mrsFile) {
+						urlMrs := fmt.Sprintf("https://github.com/%s/raw/publish/cnip/%s.mrs", os.Getenv("GITHUB_REPOSITORY"), name)
+						links = append(links, LinkDef{"MRS", urlMrs, getFileSize(mrsFile), true, "&nbsp;"})
+					}
+
+					cellDirect, cellProxy := buildLinksCell(ghProxy, enableProxy, links...)
+					cnipRows = append(cnipRows, ReportRow{name, count, cellDirect, cellProxy})
+				}
 			}
-			if anyFileExists(v6File) {
-				urlV6 := fmt.Sprintf("https://github.com/%s/raw/publish/cnip/cnipv6.txt", os.Getenv("GITHUB_REPOSITORY"))
-				cellDirect, cellProxy := buildLinksCell(ghProxy, enableProxy, LinkDef{"IPv6", urlV6, getFileSize(v6File), true, "&nbsp;"})
-				cnipRows = append(cnipRows, ReportRow{"cnipv6", r.ExactCounts["cnipv6"], cellDirect, cellProxy})
-			}
+
+			buildCnipRow("cnipv4", r.ExactCounts["cnipv4"])
+			buildCnipRow("cnipv6", r.ExactCounts["cnipv6"])
 		}
 		renderTableSection(&sb, "CNIP", enableProxy, cnipRows)
 	}

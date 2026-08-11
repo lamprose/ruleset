@@ -75,8 +75,22 @@ func ExportFiles(cat Category, res *ProcessedResult, cfg *Config, isWhite bool) 
 		for _, ip := range res.IPRules["IP-CIDR"] { ipv4 = append(ipv4, strings.Split(ip, ",")[0]) }
 		for _, ip := range res.IPRules["IP-CIDR6"] { ipv6 = append(ipv6, strings.Split(ip, ",")[0]) }
 
-		if len(ipv4) > 0 { writeToFile("publish/cnip/cnipv4.txt", []byte(strings.Join(ipv4, "\n"))) }
-		if len(ipv6) > 0 { writeToFile("publish/cnip/cnipv6.txt", []byte(strings.Join(ipv6, "\n"))) }
+		writeCnipFiles := func(name string, ips []string) {
+			if len(ips) == 0 { return }
+			writeToFile(fmt.Sprintf("publish/cnip/%s.txt", name), []byte(strings.Join(ips, "\n")))
+			if catOut.Singbox.SRS {
+				rs := SingboxRuleSet{Version: 5, Rules: []map[string]any{{"ip_cidr": ips}}}
+				if d, err := json.MarshalIndent(rs, "", "  "); err == nil {
+					writeToFile(fmt.Sprintf("process/srs_cnip_%s.json", name), d)
+				}
+			}
+			if catOut.Mihomo.MRS {
+				writeToFile(fmt.Sprintf("process/cnip_%s_mihomo_ip.txt", name), []byte(strings.Join(ips, "\n")))
+			}
+		}
+
+		writeCnipFiles("cnipv4", ipv4)
+		writeCnipFiles("cnipv6", ipv6)
 		
 		res.ExactCounts["cnipv4"] = len(ipv4)
 		res.ExactCounts["cnipv6"] = len(ipv6)

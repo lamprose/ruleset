@@ -47,11 +47,12 @@ type ProcessedResult struct {
 }
 
 func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
-	domains, suffixes, keywords, regexes := make(map[string]bool), make(map[string]bool), make(map[string]bool), make(map[string]bool)
+	domains, suffixes, keywords, regexes, wildcards := make(map[string]bool), make(map[string]bool), make(map[string]bool), make(map[string]bool), make(map[string]bool)
 	others := make(map[Rule]bool)
 
 	rmExact := make(map[Rule]bool)
-	rmDomains, rmSuffixes, rmKeywords, rmRegexes := make(map[string]bool), make(map[string]bool), make(map[string]bool), make(map[string]bool)
+	addExact := make(map[Rule]bool)
+	rmDomains, rmSuffixes, rmKeywords, rmRegexes, rmWildcards := make(map[string]bool), make(map[string]bool), make(map[string]bool), make(map[string]bool), make(map[string]bool)
 	whiteDomains, whiteSuffixes, whiteRegexes := make(map[string]bool), make(map[string]bool), make(map[string]bool)
 	ipv4Trie, ipv6Trie := &IPv4Trie{}, &IPv6Trie{}
 
@@ -126,8 +127,13 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 		}
 
 		isExactRm := false
+		isExactAdd := false
+		
 		if isRm && strings.HasPrefix(cleanLine, "EXACT:") {
 			isExactRm = true
+			cleanLine = strings.TrimSpace(strings.TrimPrefix(cleanLine, "EXACT:"))
+		} else if isAdd && strings.HasPrefix(cleanLine, "EXACT:") {
+			isExactAdd = true
 			cleanLine = strings.TrimSpace(strings.TrimPrefix(cleanLine, "EXACT:"))
 		}
 
@@ -138,32 +144,29 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 
 		if isRm {
 			res.RmCount++
-
 			rmExact[*r] = true
-			
 			if !isExactRm {
-				if r.Type == "DOMAIN" {
-					rmDomains[r.Value] = true
-				}
-				if r.Type == "DOMAIN-SUFFIX" {
-					rmSuffixes[r.Value] = true
-				}
-				if r.Type == "DOMAIN-KEYWORD" {
-					rmKeywords[r.Value] = true
-				}
-				if r.Type == "DOMAIN-REGEX" {
-					rmRegexes[r.Value] = true
-				}
-
-				if r.Type == "IP-CIDR" || r.Type == "IP-CIDR6" {
-					removeIP(r.Value, ipv4Trie, ipv6Trie)
-				}
+				if r.Type == "DOMAIN" { rmDomains[r.Value] = true }
+				if r.Type == "DOMAIN-SUFFIX" { rmSuffixes[r.Value] = true }
+				if r.Type == "DOMAIN-KEYWORD" { rmKeywords[r.Value] = true }
+				if r.Type == "DOMAIN-REGEX" { rmRegexes[r.Value] = true }
+				if r.Type == "DOMAIN-WILDCARD" { rmWildcards[r.Value] = true }
+				if r.Type == "IP-CIDR" || r.Type == "IP-CIDR6" { removeIP(r.Value, ipv4Trie, ipv6Trie) }
 			}
 			return
 		}
 
 		if isAdd {
 			res.AddCount++
+			if !isExactAdd {
+				if r.Type == "DOMAIN" { rmDomains[r.Value] = true }
+				if r.Type == "DOMAIN-SUFFIX" { rmSuffixes[r.Value] = true }
+				if r.Type == "DOMAIN-KEYWORD" { rmKeywords[r.Value] = true }
+				if r.Type == "DOMAIN-REGEX" { rmRegexes[r.Value] = true }
+				if r.Type == "DOMAIN-WILDCARD" { rmWildcards[r.Value] = true }
+			} else {
+				addExact[*r] = true
+			}
 		} else {
 			res.RawCount++
 		}
@@ -177,6 +180,8 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 			keywords[r.Value] = true
 		case "DOMAIN-REGEX":
 			regexes[r.Value] = true
+		case "DOMAIN-WILDCARD":
+			wildcards[r.Value] = true
 		case "IP-CIDR", "IP-CIDR6":
 			insertIP(r.Value, ipv4Trie, ipv6Trie)
 		default:
@@ -263,7 +268,7 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 	validLocalParsers := map[string]bool{
 		"clash": true, "v2ray": true, "adblock": true, "hosts": true,
 		"dnsmasq": true, "smartdns": true, "surge": true, "shadowrocket": true,
-		"quantumultx": true, "loon": true, "stash": true, "egern": true, "white": true,
+		"quantumultx": true, "loon": true, "stash": true, "white": true,
 	}
 
 	processLocalLine := func(line string, isAdd bool, isRm bool, source string) {
@@ -318,10 +323,16 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 		}
 	}
 
-	var compiledRmRegexes []*regexp.Regexp
+	compiledRmRegexesMap := make(map[string]*regexp.Regexp)
 	for reg := range rmRegexes {
 		if c := getCachedRegex(reg); c != nil {
-			compiledRmRegexes = append(compiledRmRegexes, c)
+			compiledRmRegexesMap[reg] = c
+		}
+	}
+	for w := range rmWildcards {
+		regStr := "^" + strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(w, ".", `\.`), "*", `.*`), "?", `.`) + "$"
+		if c := getCachedRegex(regStr); c != nil {
+			compiledRmRegexesMap[w] = c
 		}
 	}
 
@@ -330,118 +341,89 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 		suffixTrie.Insert(s)
 	}
 	for s := range suffixes {
-		if !rmExact[Rule{"DOMAIN-SUFFIX", s}] {
+		if !rmExact[Rule{"DOMAIN-SUFFIX", s}] && !addExact[Rule{"DOMAIN-SUFFIX", s}] {
 			suffixTrie.Insert(s)
 		}
 	}
 
-	isDomainKilled := func(d string) bool {
-		if rmDomains[d] {
-			return true
-		}
-		for kw := range rmKeywords {
-			if strings.Contains(d, kw) {
-				return true
-			}
-		}
-		for _, re := range compiledRmRegexes {
-			if re.MatchString(d) {
-				return true
-			}
-		}
-		if suffixTrie.MatchAnySuffix(d) {
-			return true
-		}
-		return false
-	}
-
-	isSuffixKilled := func(s string) bool {
-		if rmSuffixes[s] {
-			return true
-		}
-		for kw := range rmKeywords {
-			if strings.Contains(s, kw) {
-				return true
-		    }
-		}
-		for _, re := range compiledRmRegexes {
-			if re.MatchString(s) {
-				return true
-			}
-		}
-		if suffixTrie.MatchParentSuffix(s) {
-			return true
-		}
-		return false
-	}
-
-	isRegexKilled := func(r string) bool {
-		if rmExact[Rule{"DOMAIN-REGEX", r}] {
-			return true
-		}
+	cleanPatternForMatch := func(r string) string {
 		orig := r
-		if len(orig) > 1 && orig[0] == '^' {
-			orig = orig[1:]
-		}
-		if len(orig) > 1 && orig[len(orig)-1] == '$' {
-			orig = orig[:len(orig)-1]
-		}
-
-		if strings.HasPrefix(orig, `(.+\.)?`) {
-			orig = "+." + orig[7:]
-		} else if strings.HasPrefix(orig, `.+\.`) {
-			orig = "." + orig[4:]
-		}
-
-		if orig == ".*" || orig == "[^.]+" {
-			orig = "*"
-		}
+		if len(orig) > 1 && orig[0] == '^' { orig = orig[1:] }
+		if len(orig) > 1 && orig[len(orig)-1] == '$' { orig = orig[:len(orig)-1] }
+		if strings.HasPrefix(orig, `(.+\.)?`) { orig = "+." + orig[7:] } else if strings.HasPrefix(orig, `.+\.`) { orig = "." + orig[4:] }
+		if orig == ".*" || orig == "[^.]+" { orig = "*" }
 		orig = strings.ReplaceAll(orig, ".*", "*")
 		orig = strings.ReplaceAll(orig, "[^.]+", "*")
 		orig = strings.ReplaceAll(orig, `\.`, ".")
 		orig = strings.ReplaceAll(orig, `\\`, `\`)
+		return orig
+	}
 
-		if suffixTrie.MatchAnySuffix(orig) {
-			return true
+	isCrossKilled := func(val string, ruleType string) bool {
+		checkVal := val
+		if ruleType == "DOMAIN-REGEX" || ruleType == "DOMAIN-WILDCARD" {
+			checkVal = cleanPatternForMatch(val)
 		}
+		for kw := range rmKeywords {
+			if ruleType == "DOMAIN-KEYWORD" && val == kw { continue } 
+			if strings.Contains(checkVal, kw) { return true }
+		}
+		if ruleType == "DOMAIN-KEYWORD" { 
+			return false 
+		}
+		if ruleType == "DOMAIN" {
+			if suffixTrie.MatchAnySuffix(checkVal) { return true }
+		} else {
+			if suffixTrie.MatchParentSuffix(checkVal) { return true }
+		}
+		if ruleType == "DOMAIN-SUFFIX" { 
+			return false 
+		}
+		if ruleType == "DOMAIN" {
+			for _, re := range compiledRmRegexesMap {
+				if re.MatchString(checkVal) { return true }
+			}
+		}
+
 		return false
 	}
 
 	for d := range domains {
-		if rmExact[Rule{"DOMAIN", d}] {
-			continue
-		}
-		if !isDomainKilled(d) {
+		if rmExact[Rule{"DOMAIN", d}] { continue }
+		if !isCrossKilled(d, "DOMAIN") {
 			res.DomRules["DOMAIN"] = append(res.DomRules["DOMAIN"], d)
 		}
 	}
 	for s := range suffixes {
-		if rmExact[Rule{"DOMAIN-SUFFIX", s}] {
-			continue
-		}
-		if !isSuffixKilled(s) {
+		if rmExact[Rule{"DOMAIN-SUFFIX", s}] { continue }
+		if !isCrossKilled(s, "DOMAIN-SUFFIX") {
 			res.DomRules["DOMAIN-SUFFIX"] = append(res.DomRules["DOMAIN-SUFFIX"], s)
 		}
 	}
 	for r := range regexes {
-		if !isRegexKilled(r) {
+		if rmExact[Rule{"DOMAIN-REGEX", r}] { continue }
+		if !isCrossKilled(r, "DOMAIN-REGEX") {
 			res.DomRules["DOMAIN-REGEX"] = append(res.DomRules["DOMAIN-REGEX"], r)
 		}
 	}
 	for k := range keywords {
-		if rmExact[Rule{"DOMAIN-KEYWORD", k}] {
-			continue
+		if rmExact[Rule{"DOMAIN-KEYWORD", k}] { continue }
+		if !isCrossKilled(k, "DOMAIN-KEYWORD") {
+			res.DomRules["DOMAIN-KEYWORD"] = append(res.DomRules["DOMAIN-KEYWORD"], k)
 		}
-		res.DomRules["DOMAIN-KEYWORD"] = append(res.DomRules["DOMAIN-KEYWORD"], k)
 	}
-
-	for o := range others {
-		if rmExact[o] {
-			continue
+	for w := range wildcards {
+		if rmExact[Rule{"DOMAIN-WILDCARD", w}] { continue }
+		if !isCrossKilled(w, "DOMAIN-WILDCARD") {
+			res.DomRules["DOMAIN-WILDCARD"] = append(res.DomRules["DOMAIN-WILDCARD"], w)
 		}
+	}
+	for o := range others {
+		if rmExact[o] { continue }
+		
 		t, v := o.Type, o.Value
-
-		if t == "PROCESS-NAME" || t == "PROCESS-PATH" || t == "USER-AGENT" || t == "DOMAIN-WILDCARD" || t == "URL-REGEX" {
+		
+		if t == "PROCESS-NAME" || t == "PROCESS-PATH" || t == "USER-AGENT" || t == "URL-REGEX" {
 			res.DomRules[t] = append(res.DomRules[t], v)
 		} else {
 			res.IPRules[t] = append(res.IPRules[t], v)
@@ -455,15 +437,12 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 	for s := range whiteSuffixes {
 		whiteSuffixTrie.Insert(s)
 	}
-
 	isWhiteDomKilled := func(d string) bool {
 		return whiteSuffixTrie.MatchAnySuffix(d)
 	}
-
 	isWhiteSufKilled := func(s string) bool {
 		return whiteSuffixTrie.MatchParentSuffix(s)
 	}
-
 	for d := range whiteDomains {
 		if !isWhiteDomKilled(d) {
 			res.WhiteDomRules["DOMAIN"] = append(res.WhiteDomRules["DOMAIN"], d)
@@ -477,21 +456,18 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 	for r := range whiteRegexes {
 		res.WhiteDomRules["DOMAIN-REGEX"] = append(res.WhiteDomRules["DOMAIN-REGEX"], r)
 	}
-
 	for _, k := range []string{"DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN-REGEX", "DOMAIN-WILDCARD", "URL-REGEX", "PROCESS-NAME", "PROCESS-PATH", "USER-AGENT"} {
 		if v, ok := res.DomRules[k]; ok {
 			sort.Strings(v)
 			res.FinalCount += len(v)
 		}
 	}
-
 	for _, k := range []string{"DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-REGEX"} {
 		if v, ok := res.WhiteDomRules[k]; ok {
 			sort.Strings(v)
 			res.WhiteCount += len(v)
 		}
 	}
-
 	if v, ok := res.IPRules["IP-CIDR6"]; ok {
 		var norm, ffff []string
 		for _, ip := range v {
@@ -503,7 +479,6 @@ func ProcessCategory(cat Category, cfg *Config) *ProcessedResult {
 		}
 		res.IPRules["IP-CIDR6"] = append(norm, ffff...)
 	}
-
 	for _, k := range []string{"IP-CIDR", "IP-CIDR6"} {
 		if v, ok := res.IPRules[k]; ok {
 			res.FinalCount += len(v)

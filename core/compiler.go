@@ -29,6 +29,7 @@ func CompileAll(cfg *Config) {
 	}
 
 	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
 
 	if hasSingbox {
 		files, _ := filepath.Glob("process" + "/srs_*.json")
@@ -38,10 +39,19 @@ func CompileAll(cfg *Config) {
 			
 			go func(f string) {
 				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
 				
 				baseName := strings.TrimPrefix(filepath.Base(f), "srs_")
 				outName := strings.TrimSuffix(baseName, ".json") + ".srs"
-				outPath := filepath.Join("publish/singbox", outName)
+				outDir := "publish/singbox"
+				
+				if strings.HasPrefix(baseName, "cnip_") {
+					outDir = "publish/cnip"
+					outName = strings.TrimPrefix(outName, "cnip_")
+				}
+				
+				outPath := filepath.Join(outDir, outName)
 
 				if err := exec.Command("sing-box", "rule-set", "compile", f, "-o", outPath).Run(); err != nil {
 					fmt.Printf("Failed to compile (sing-box): %s\n", f)
@@ -59,6 +69,8 @@ func CompileAll(cfg *Config) {
 			
 			go func(f string) {
 				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
 				
 				catName := strings.TrimSuffix(filepath.Base(f), "_mihomo_domain.txt")
 				outFile := fmt.Sprintf("%s/%s.mrs", "publish/mihomo", catName)
@@ -76,9 +88,18 @@ func CompileAll(cfg *Config) {
 			
 			go func(f string) {
 				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
 				
 				catName := strings.TrimSuffix(filepath.Base(f), "_mihomo_ip.txt")
-				outFile := fmt.Sprintf("%s/%s_ip.mrs", "publish/mihomo", catName)
+				outDir := "publish/mihomo"
+				outFile := ""
+				if strings.HasPrefix(catName, "cnip_") {
+					outDir = "publish/cnip"
+					outFile = fmt.Sprintf("%s/%s.mrs", outDir, strings.TrimPrefix(catName, "cnip_"))
+				} else {
+					outFile = fmt.Sprintf("%s/%s_ip.mrs", outDir, catName)
+				}
 				if err := exec.Command("mihomo", "convert-ruleset", "ipcidr", "text", f, outFile).Run(); err == nil {
 					fmt.Printf("Successfully compiled: %s\n", outFile)
 				} else {

@@ -91,9 +91,9 @@ func downloadWithRetry(client *http.Client, url, dest string, retries int) bool 
 					return false
 				}
 				
+				defer out.Close()
+				
 				_, err = io.Copy(out, resp.Body)
-
-				out.Close() 
 
 				if err == nil {
 					return true
