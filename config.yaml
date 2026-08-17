@@ -4,13 +4,13 @@ global:
   split_cnip: true
   singbox:      {enable: true, single_file: false, json: true, srs: true}
   mihomo:       {enable: true, single_file: false, txt: false, yaml: true, mrs: true}
-  v2ray:        {enable: true, single_file: false}
-  surge:        {enable: true, single_file: true}
-  loon:         {enable: true, single_file: true}
-  stash:        {enable: true, single_file: true}
-  egern:        {enable: true, single_file: true}
-  shadowrocket: {enable: true, single_file: true}
-  quantumultx:  {enable: true, single_file: true}
+  v2ray:        {enable: false, single_file: false}
+  surge:        {enable: false, single_file: true}
+  loon:         {enable: false, single_file: true}
+  stash:        {enable: false, single_file: true}
+  egern:        {enable: false, single_file: true}
+  shadowrocket: {enable: false, single_file: true}
+  quantumultx:  {enable: false, single_file: true}
 
 categories:
   - name: cn
