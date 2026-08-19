@@ -118,5 +118,5 @@ categories:
 
   - name: httpdns
     upstreams:
-      - {url: "https://raw.githubusercontent.com/QuixoticHeart/rule-set/refs/heads/ruleset/singbox/version5/httpdns.json"}
+      - {url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/BlockHttpDNS/BlockHttpDNS.list"}
 
