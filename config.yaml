@@ -42,9 +42,6 @@ categories:
     upstreams:
       - {url: "https://anti-ad.net/clash.yaml"}
       - {url: "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/main/Filters/AWAvenue-Ads-Rule-Clash-Classical.yaml"}
-      - {url: "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/native.oppo-realme.txt"}
-      - {url: "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/native.xiaomi.txt"}
-      - {url: "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/native.winoffice.txt"}
       - {url: "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"}
 
   - name: webrtc
