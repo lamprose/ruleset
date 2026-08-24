@@ -52,7 +52,7 @@ DIY-Ruleset/
 
 ### ⚠️ 注意事项 ：
 
-1. Mihomo (Clash Meta) 官方内核对 .mrs 二进制格式的类型要求极其严苛。仅支持完整域名、Clash 的域名通配符和 IP 规则。如果你发现 .mrs 文件内的条目数量与 .yaml 文本列表有出入，这属于上游内核的编译机制限制。此外， .mrs 二进制文件格式强制隔离域名与 IP，即便设定 single_file: true，引擎仍会强制对其拆分为独立文件。(Stash 使用 .mrs )
+1. Mihomo (Clash Meta) 官方内核对 .mrs 二进制格式的类型要求极其严苛。仅支持完整域名、Clash 的域名通配符和 IP 规则。如果你发现 .mrs 文件内的条目数量与 .yaml 文本列表有出入，这属于上游内核的编译机制限制。此外， .mrs 二进制文件格式强制隔离域名与 IP，即便设定 single_file: true，引擎仍会强制对其拆分为独立文件。( Stash 使用的 .mrs 同理)
 
 2. Mihomo (Clash Meta) .mrs 二进制格式使用的域名通配符规则与 DOMAIN-WILDCARD 通配符规则并不相同，详细文档请查看 Mihomo (Clash Meta) 官网。
 
