@@ -119,3 +119,7 @@ categories:
     upstreams:
       - {url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/BlockHttpDNS/BlockHttpDNS.list"}
 
+  - name: microsoft
+    upstreams:
+      - {url: "https://raw.githubusercontent.com/GitMetaio/rule/refs/heads/master/rule/Clash/Microsoft/Microsoft.list"}
+
