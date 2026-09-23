@@ -4,13 +4,13 @@ global:
   split_cnip: true
   singbox:      {enable: true, single_file: false, json: true, srs: true}
   mihomo:       {enable: true, single_file: false, txt: false, yaml: true, mrs: true}
-  v2ray:        {enable: true, single_file: false}
-  surge:        {enable: true, single_file: true}
-  loon:         {enable: true, single_file: true}
-  stash:        {enable: true, single_file: true}
-  egern:        {enable: true, single_file: true}
-  shadowrocket: {enable: true, single_file: true}
-  quantumultx:  {enable: true, single_file: true}
+  v2ray:        {enable: false, single_file: false}
+  surge:        {enable: false, single_file: true}
+  loon:         {enable: false, single_file: true}
+  stash:        {enable: false, single_file: true}
+  egern:        {enable: false, single_file: true}
+  shadowrocket: {enable: false, single_file: true}
+  quantumultx:  {enable: false, single_file: true}
 
 categories:
   - name: cn
@@ -73,9 +73,6 @@ categories:
       - {url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/meta/geo-lite/geoip/cloudflare.list"}
 
   - name: proxy
-    upstreams:
-      - {url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Global/Global.list"}
-      - {url: "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/proxy.txt"}
 
   - name: telegram
     upstreams:
@@ -104,16 +101,6 @@ categories:
       - {url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/GitLab/GitLab.list"}
       - {url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/GitHub/GitHub.list"}
 
-  - name: tiktok
-    upstreams:
-      - {url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/TikTok/TikTok.list"}
-      - {url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/meta/geo/geosite/tiktok.list"}
-
-  - name: discord
-    upstreams:
-      - {url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/Discord/Discord.list"}
-      - {url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/meta/geo/geosite/discord.list"}
-
   - name: httpdns
     upstreams:
       - {url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/refs/heads/meta/geo/geosite/category-httpdns-cn.list"}
@@ -133,3 +120,11 @@ categories:
   - name: webrtc
     singbox: {single_file: true}
     mihomo:  {single_file: true}
+
+  - name: local
+
+  - name: company
+
+  - name: microsoft
+    upstreams:
+      - {url: "https://raw.githubusercontent.com/GitMetaio/rule/refs/heads/master/rule/Clash/Microsoft/Microsoft.list"}
