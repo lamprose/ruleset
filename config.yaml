@@ -29,6 +29,7 @@ categories:
       - {url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/refs/heads/master/Clash/ChinaIp.list"}
       - {url: "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/refs/heads/master/Clash/ChinaIpV6.list"}
       - {url: "https://ispip.clang.cn/all_cn_ipv46.txt"}
+      - {url: "https://github.com/X-Shelby/geoip/releases/download/latest/cn.txt"}
 
   - name: reject
     auto_extract_white: true
