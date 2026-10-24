@@ -1,0 +1,19 @@
+{
+  "version": 5,
+  "rules": [
+    {
+      "domain_suffix": [
+        "gh-proxy.cn",
+        "gh-proxy.com",
+        "gh-proxy.org",
+        "ghfast.top",
+        "vben.pro"
+      ]
+    },
+    {
+      "domain_keyword": [
+        "bsbsb"
+      ]
+    }
+  ]
+}
