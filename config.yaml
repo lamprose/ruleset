@@ -13,17 +13,17 @@ global:
 
   geodata:
     geosite:
-      enable: true
+      enable: false
 #      upstreams: ["https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"]
 #      pick: [cn]          # 默认空=全部标签，不建议为空，没必要拉取上千个规则集，README.md报表顶不住
 #      exclude: []
     geoip:
-      enable: true
+      enable: false
 #      upstreams: ["https://raw.githubusercontent.com/Loyalsoldier/geoip/release/geoip.dat"]
 #      pick: [AS15169]             # 同上
 #      exclude: []
     mmdb:
-      enable: true        # 固定同时产出 publish/country.mmdb（tags：国家码/ASN/category）与 publish/asn.mmdb（仅 ASN，GeoLite2-ASN 兼容）
+      enable: false        # 固定同时产出 publish/country.mmdb（tags：国家码/ASN/category）与 publish/asn.mmdb（仅 ASN，GeoLite2-ASN 兼容）
 #      upstreams: ["https://raw.githubusercontent.com/Loyalsoldier/geoip/release/Country.mmdb"]
 #      pick: [AS13335]                # 同上
 #      exclude: []
@@ -31,8 +31,8 @@ global:
 categories:
   - name: cn
     merge_from: ["applecn"]
-    publish_dnsmasq: true               #仅作示例
-    publish_smartdns: true              #仅作示例
+    publish_dnsmasq: false               #仅作示例
+    publish_smartdns: false              #仅作示例
     dnsmasq_server: "223.6.6.6"         #仅作示例
     smartdns_server: "china_group"      #仅作示例
     remove_urls:
@@ -53,13 +53,13 @@ categories:
     auto_extract_white: true
     publish_white: true
     white_behavior: "remove"
-    publish_adblock: true
-    publish_dnsmasq: true
-    publish_smartdns: true
+    publish_adblock: false
+    publish_dnsmasq: false
+    publish_smartdns: false
     remove_urls:
       - {url: "https://raw.githubusercontent.com/217heidai/adblockfilters/refs/heads/main/rules/white.txt"}
     upstreams:
-      - {url: "https://anti-ad.net/clash.yaml"}
+      - {url: "https://raw.githubusercontent.com/privacy-protection-tools/anti-AD/master/anti-ad-clash.yaml"}
       - {url: "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/main/Filters/AWAvenue-Ads-Rule-Clash-Classical.yaml"}
       - {url: "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"}
 
