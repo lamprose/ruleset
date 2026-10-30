@@ -13,15 +13,15 @@ global:
 
   geodata:
     geosite:
-      enable: false
-#      upstreams: ["https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"]
-#      pick: [cn]          # 默认空=全部标签，不建议为空，没必要拉取上千个规则集，README.md报表顶不住
-#      exclude: []
+      enable: true
+       upstreams: ["https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"]
+       pick: [cn,category-ads-all]          # 默认空=全部标签，不建议为空，没必要拉取上千个规则集，README.md报表顶不住
+       exclude: []
     geoip:
-      enable: false
-#      upstreams: ["https://raw.githubusercontent.com/Loyalsoldier/geoip/release/geoip.dat"]
-#      pick: [AS15169]             # 同上
-#      exclude: []
+      enable: true
+       upstreams: ["https://raw.githubusercontent.com/Loyalsoldier/geoip/release/geoip.dat"]
+       pick: [CN,category-ads-all]             # 同上
+       exclude: []
     mmdb:
       enable: false        # 固定同时产出 publish/country.mmdb（tags：国家码/ASN/category）与 publish/asn.mmdb（仅 ASN，GeoLite2-ASN 兼容）
 #      upstreams: ["https://raw.githubusercontent.com/Loyalsoldier/geoip/release/Country.mmdb"]
