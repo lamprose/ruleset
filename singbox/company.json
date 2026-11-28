@@ -1,0 +1,15 @@
+{
+  "version": 5,
+  "rules": [
+    {
+      "domain_suffix": [
+        "wondersgroup.com"
+      ]
+    },
+    {
+      "domain_keyword": [
+        "wondersgroup"
+      ]
+    }
+  ]
+}
